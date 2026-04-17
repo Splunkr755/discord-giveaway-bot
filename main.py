@@ -240,7 +240,7 @@ async def giveaway_checker(client):
             for mid in ended:
                 await finish_giveaway(guild, mid)
 
-# ====================== ALL COMMANDS (MUST BE BEFORE on_ready) ======================
+# ====================== ALL COMMANDS (DEFINED BEFORE on_ready) ======================
 @tree.command(name="create_giveaway", description="Create a new raffle/giveaway (costs tickets to enter)")
 @app_commands.describe(
     prize="What the winner gets",
