@@ -557,15 +557,9 @@ client.setup_hook = setup_hook
 @client.event
 async def on_ready():
     print(f'✅ Logged in as {client.user}')
-    # DEBUG: Tell us how many commands actually got registered
     command_count = len(list(tree.walk_commands()))
     print(f"DEBUG: {command_count} commands are in the tree before syncing")
     try:
-        print("Clearing old global commands...")
-        tree.clear_commands(guild=None)
-        await tree.sync()
-        print("✅ Old global commands cleared")
-
         synced = await tree.sync()
         print(f'✅ Synced {len(synced)} global command(s)')
     except Exception as e:
