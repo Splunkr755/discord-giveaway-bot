@@ -248,13 +248,13 @@ async def on_ready():
     client.add_view(GiveawayEnterView())
     client.add_view(FreeGiveawayView())
     try:
-        # === FIX FOR DUPLICATE GLOBAL COMMANDS ===
+        # Clear old global commands (this fixes the duplicates)
         print("Clearing old global commands...")
         tree.clear_commands(guild=None)
-        await tree.sync()                    # clears all lingering global commands
+        await tree.sync()
         print("✅ Old global commands cleared")
 
-        # Register fresh global commands (available in all servers)
+        # Register fresh global commands
         synced = await tree.sync()
         print(f'✅ Synced {len(synced)} global command(s)')
     except Exception as e:
