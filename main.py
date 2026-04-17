@@ -15,7 +15,7 @@ intents.message_content = True
 intents.members = True
 client = discord.Client(intents=intents)
 tree = app_commands.CommandTree(client)
-DATA_FILE = "/app/bot_data.json"
+DATA_FILE = "/data/bot_data.json"   # ← CHANGED HERE (this is the fix)
 data = {}
 def load_data():
     global data
@@ -546,7 +546,6 @@ async def on_message(message: discord.Message):
             extra_chance += role_chance_bonuses[rid]
     base_chance = guild_data.get("ticket_chance", 0.25)
     total_chance = base_chance + extra_chance
-    # Multiple tickets possible if total_chance > 1.0
     tickets_won = 0
     chance = total_chance
     while chance > 0:
@@ -561,7 +560,6 @@ async def on_message(message: discord.Message):
         new_total = current + total_tickets
         tickets_dict[user_id_str] = new_total
         save_data()
-        # Announcement with auto-delete after 12 seconds
         ticket_channel_id = guild_data.get("ticket_channel")
         announcement_channel = message.channel
         if ticket_channel_id:
