@@ -526,38 +526,53 @@ async def on_ready():
     except Exception as e:
         print(f'❌ Sync failed: {e}')
         traceback.print_exc()
-# ====================== TICKET FARMING FROM CHAT ======================
+# ====================== TICKET FARMING FROM CHAT (WORKING VERSION FROM OLD CODE) ======================
 @client.event
 async def on_message(message: discord.Message):
     if message.author.bot or not message.guild:
         return
     guild_data = get_guild_data(message.guild.id)
-    # Skip excluded channels
     if str(message.channel.id) in guild_data.get("excluded_channels", []):
         return
-    # Calculate final chance (base + role bonuses)
-    base_chance = guild_data.get("ticket_chance", 0.25)
+    role_bonuses = guild_data.get("role_bonuses", {})
+    role_chance_bonuses = guild_data.get("role_chance_bonuses", {})
+    extra_tickets = 0
     extra_chance = 0.0
     for role in message.author.roles:
-        extra = guild_data.get("role_chance_bonuses", {}).get(str(role.id), 0.0)
-        extra_chance += extra
-    final_chance = min(1.0, base_chance + extra_chance)
-    # Roll for ticket - NO cooldown
-    if random.random() < final_chance:
+        rid = str(role.id)
+        if rid in role_bonuses:
+            extra_tickets += role_bonuses[rid]
+        if rid in role_chance_bonuses:
+            extra_chance += role_chance_bonuses[rid]
+    base_chance = guild_data.get("ticket_chance", 0.25)
+    total_chance = base_chance + extra_chance
+    # Multiple tickets possible if total_chance > 1.0
+    tickets_won = 0
+    chance = total_chance
+    while chance > 0:
+        if random.random() < min(chance, 1.0):
+            tickets_won += 1
+        chance -= 1.0
+    if tickets_won > 0:
+        total_tickets = tickets_won + extra_tickets
         tickets_dict = guild_data.setdefault("tickets", {})
-        user_id = str(message.author.id)
-        old = tickets_dict.get(user_id, 0)
-        tickets_dict[user_id] = old + 1
+        user_id_str = str(message.author.id)
+        current = tickets_dict.get(user_id_str, 0)
+        new_total = current + total_tickets
+        tickets_dict[user_id_str] = new_total
         save_data()
-        # Send message (exactly as you wanted)
-        try:
-            await message.channel.send(
-                f"🎟️ **Ticket earned!** {message.author.mention} now has **{old + 1}** tickets!",
-                delete_after=8  # auto-deletes so channel doesn't get flooded
-            )
-        except:
-            pass
-        print(f"🎟️ TICKET AWARDED to {message.author} (now has {old+1}) | Chance was {final_chance*100:.1f}%")
+        # Announcement (exactly like your old working version)
+        ticket_channel_id = guild_data.get("ticket_channel")
+        announcement_channel = message.channel
+        if ticket_channel_id:
+            ch = message.guild.get_channel(int(ticket_channel_id))
+            if ch:
+                announcement_channel = ch
+        await announcement_channel.send(
+            f"🎟️ {message.author.mention} won **{total_tickets}** ticket(s)! "
+            f"(+{extra_tickets} from roles) **Total: {new_total}** 🎟️"
+        )
+        print(f"🎟️ TICKET AWARDED to {message.author} (+{extra_tickets} role bonus) → now has {new_total}")
 # ====================== RUN BOT ======================
 if __name__ == "__main__":
     if not TOKEN:
