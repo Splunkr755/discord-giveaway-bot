@@ -6,6 +6,7 @@ import os
 import asyncio
 import datetime
 import re
+import traceback
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -240,7 +241,7 @@ async def giveaway_checker(client):
             for mid in ended:
                 await finish_giveaway(guild, mid)
 
-# ====================== ALL COMMANDS (DEFINED BEFORE on_ready) ======================
+# ====================== ALL COMMANDS (FULLY WRITTEN OUT) ======================
 @tree.command(name="create_giveaway", description="Create a new raffle/giveaway (costs tickets to enter)")
 @app_commands.describe(
     prize="What the winner gets",
@@ -588,10 +589,9 @@ async def remove_giveaway_blacklist_role(interaction: discord.Interaction, role:
         save_data()
     await interaction.response.send_message(f"✅ **{role.name}** can now host giveaways again!", ephemeral=True)
 
-# ====================== EVENTS ======================
-@client.event
-async def on_ready():
-    print(f'✅ Logged in as {client.user}')
+# ====================== SETUP HOOK (THIS IS THE FIX) ======================
+async def setup_hook():
+    print("🚀 Running setup_hook...")
     load_data()
     client.add_view(GiveawayEnterView())
     client.add_view(FreeGiveawayView())
@@ -600,13 +600,20 @@ async def on_ready():
         tree.clear_commands(guild=None)
         await tree.sync()
         print("✅ Old global commands cleared")
-
         synced = await tree.sync()
         print(f'✅ Synced {len(synced)} global command(s)')
     except Exception as e:
         print(f'❌ Sync failed: {e}')
+        traceback.print_exc()
     asyncio.create_task(giveaway_checker(client))
     print("✅ Giveaway checker started!")
+
+client.setup_hook = setup_hook
+
+# ====================== EVENTS ======================
+@client.event
+async def on_ready():
+    print(f'✅ Logged in as {client.user}')
 
 @client.event
 async def on_message(message: discord.Message):
