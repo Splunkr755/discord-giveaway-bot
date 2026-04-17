@@ -15,7 +15,7 @@ intents.message_content = True
 intents.members = True
 client = discord.Client(intents=intents)
 tree = app_commands.CommandTree(client)
-DATA_FILE = "/data/bot_data.json"   # ← CHANGED HERE (this is the fix)
+DATA_FILE = "/data/bot_data.json"
 data = {}
 def load_data():
     global data
@@ -43,7 +43,8 @@ def get_guild_data(guild_id):
             "ticket_chance": 0.25,
             "giveaway_host_role": None,
             "giveaway_blacklist_roles": [],
-            "ticket_mod_role": None
+            "ticket_mod_role": None,
+            "shop_items": {}
         }
     else:
         gd = data["guilds"][gid]
@@ -55,6 +56,7 @@ def get_guild_data(guild_id):
         if "giveaway_host_role" not in gd: gd["giveaway_host_role"] = None
         if "giveaway_blacklist_roles" not in gd: gd["giveaway_blacklist_roles"] = []
         if "ticket_mod_role" not in gd: gd["ticket_mod_role"] = None
+        if "shop_items" not in gd: gd["shop_items"] = {}
     return data["guilds"][gid]
 # ====================== VIEWS & MODALS ======================
 class TicketEntryModal(discord.ui.Modal, title="🎟️ Enter the Raffle"):
@@ -144,6 +146,45 @@ class FreeGiveawayView(discord.ui.View):
         except:
             pass
         await interaction.response.send_message("✅ You have entered the giveaway!", ephemeral=True)
+# ====================== SHOP PAGINATION VIEW ======================
+class ShopView(discord.ui.View):
+    def __init__(self, guild_data, page=0):
+        super().__init__(timeout=300)
+        self.guild_data = guild_data
+        self.page = page
+        self.items = list(guild_data["shop_items"].items())
+    def get_embed(self):
+        start = self.page * 5
+        end = start + 5
+        page_items = self.items[start:end]
+        embed = discord.Embed(title="🛒 Server Shop", color=0x00ff88)
+        if not page_items:
+            embed.description = "No items in the shop right now."
+            return embed
+        desc = ""
+        for i, (item_id, item) in enumerate(page_items, start=start+1):
+            stock = item.get("server_stock", "∞")
+            if stock is not None and stock <= 0:
+                continue
+            desc += f"**{i}. {item['name']}** — `{item['price']}` tickets\n"
+            desc += f"{item['description'][:150]}{'...' if len(item['description']) > 150 else ''}\n\n"
+        embed.description = desc
+        embed.set_footer(text=f"Page {self.page+1} • Use buttons to navigate")
+        return embed
+    @discord.ui.button(label="⬅️ Prev", style=discord.ButtonStyle.gray)
+    async def prev(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.page > 0:
+            self.page -= 1
+            await interaction.response.edit_message(embed=self.get_embed(), view=self)
+        else:
+            await interaction.response.defer()
+    @discord.ui.button(label="Next ➡️", style=discord.ButtonStyle.gray)
+    async def next(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if (self.page + 1) * 5 < len(self.items):
+            self.page += 1
+            await interaction.response.edit_message(embed=self.get_embed(), view=self)
+        else:
+            await interaction.response.defer()
 # ====================== LIVE EMBED REFRESH ======================
 async def refresh_giveaway_embed(message: discord.Message, giveaway: dict):
     entries = giveaway.get("entries", {})
@@ -223,6 +264,18 @@ async def giveaway_checker(client):
             ended = [mid for mid, g in list(guild_data["giveaways"].items()) if now > g.get("end_time", 0)]
             for mid in ended:
                 await finish_giveaway(guild, mid)
+async def shop_checker(client):
+    await client.wait_until_ready()
+    while True:
+        await asyncio.sleep(30)
+        now = datetime.datetime.now(datetime.timezone.utc).timestamp()
+        for guild in client.guilds:
+            guild_data = get_guild_data(guild.id)
+            expired = [iid for iid, item in list(guild_data["shop_items"].items()) if item.get("expires_at") and now > item["expires_at"]]
+            for iid in expired:
+                del guild_data["shop_items"][iid]
+            if expired:
+                save_data()
 # ====================== ALL COMMANDS ======================
 @tree.command(name="create_giveaway", description="Create a new raffle/giveaway (costs tickets to enter)")
 @app_commands.describe(prize="What the winner gets", duration="How long (e.g. 30s, 5m, 1h, 2d)", winners="Number of winners", image="Optional image for the embed", ping_role="Role to ping when the giveaway starts (leave empty for no ping)", channel="Channel to post the giveaway in (leave empty for current channel)")
@@ -505,6 +558,103 @@ async def remove_giveaway_blacklist_role(interaction: discord.Interaction, role:
         guild_data["giveaway_blacklist_roles"].remove(str(role.id))
         save_data()
     await interaction.response.send_message(f"✅ **{role.name}** can now host giveaways again!", ephemeral=True)
+@tree.command(name="add_shop_item", description="Add a new item to the server shop (Admins only)")
+@app_commands.describe(
+    name="Item name (unique)",
+    price="Price in tickets",
+    description="Item description",
+    image="Optional image",
+    server_stock="Total stock (leave blank for unlimited)",
+    per_user_limit="Max per user (leave blank for unlimited)",
+    duration="How long until item expires (e.g. 2h, 3d)",
+    role="Role to auto-give on purchase (optional)"
+)
+@app_commands.default_permissions(administrator=True)
+async def add_shop_item(interaction: discord.Interaction, name: str, price: int, description: str,
+                        image: discord.Attachment = None, server_stock: int = None,
+                        per_user_limit: int = None, duration: str = None, role: discord.Role = None):
+    if price < 1:
+        await interaction.response.send_message("❌ Price must be at least 1 ticket!", ephemeral=True)
+        return
+    guild_data = get_guild_data(interaction.guild.id)
+    if name in guild_data["shop_items"]:
+        await interaction.response.send_message("❌ An item with this name already exists!", ephemeral=True)
+        return
+    expires_at = None
+    if duration:
+        seconds = parse_duration(duration)
+        expires_at = datetime.datetime.now(datetime.timezone.utc).timestamp() + seconds
+    guild_data["shop_items"][name] = {
+        "name": name,
+        "price": price,
+        "description": description,
+        "image_url": image.url if image else None,
+        "server_stock": server_stock,
+        "per_user_limit": per_user_limit,
+        "expires_at": expires_at,
+        "role_id": str(role.id) if role else None,
+        "purchases": {}
+    }
+    save_data()
+    await interaction.response.send_message(f"✅ Shop item **{name}** added for `{price}` tickets!", ephemeral=True)
+@tree.command(name="shop", description="View the current server shop")
+async def shop(interaction: discord.Interaction):
+    if not interaction.guild:
+        await interaction.response.send_message("This only works in servers!", ephemeral=True)
+        return
+    guild_data = get_guild_data(interaction.guild.id)
+    if not guild_data["shop_items"]:
+        await interaction.response.send_message("🛒 The shop is currently empty!", ephemeral=True)
+        return
+    view = ShopView(guild_data)
+    await interaction.response.send_message(embed=view.get_embed(), view=view)
+@tree.command(name="buy", description="Buy an item from the shop")
+@app_commands.describe(item="Name of the item to buy")
+async def buy(interaction: discord.Interaction, item: str):
+    if not interaction.guild:
+        await interaction.response.send_message("This only works in servers!", ephemeral=True)
+        return
+    guild_data = get_guild_data(interaction.guild.id)
+    if item not in guild_data["shop_items"]:
+        await interaction.response.send_message("❌ That item does not exist in the shop!", ephemeral=True)
+        return
+    shop_item = guild_data["shop_items"][item]
+    now = datetime.datetime.now(datetime.timezone.utc).timestamp()
+    if shop_item.get("expires_at") and now > shop_item["expires_at"]:
+        del guild_data["shop_items"][item]
+        save_data()
+        await interaction.response.send_message("❌ This item has expired!", ephemeral=True)
+        return
+    if shop_item.get("server_stock") is not None and shop_item["server_stock"] <= 0:
+        await interaction.response.send_message("❌ This item is out of stock!", ephemeral=True)
+        return
+    user_id = str(interaction.user.id)
+    bought = shop_item["purchases"].get(user_id, 0)
+    if shop_item.get("per_user_limit") is not None and bought >= shop_item["per_user_limit"]:
+        await interaction.response.send_message(f"❌ You have already reached the limit for this item!", ephemeral=True)
+        return
+    tickets_dict = guild_data.setdefault("tickets", {})
+    current_tickets = tickets_dict.get(user_id, 0)
+    if current_tickets < shop_item["price"]:
+        await interaction.response.send_message(f"❌ You only have **{current_tickets}** tickets. Need **{shop_item['price']}**!", ephemeral=True)
+        return
+    tickets_dict[user_id] = current_tickets - shop_item["price"]
+    shop_item["purchases"][user_id] = bought + 1
+    if shop_item.get("server_stock") is not None:
+        shop_item["server_stock"] -= 1
+    save_data()
+    role_id = shop_item.get("role_id")
+    if role_id:
+        role = interaction.guild.get_role(int(role_id))
+        if role:
+            await interaction.user.add_roles(role)
+            await interaction.response.send_message(f"✅ **Purchase successful!** You received the **{role.name}** role!", ephemeral=False)
+            return
+    await interaction.response.send_message(
+        f"✅ **Purchase successful!** You bought **{item}** for `{shop_item['price']}` tickets.\n"
+        f"Open a ticket to claim your prize (include a screenshot of this message).",
+        ephemeral=False
+    )
 # ====================== SETUP HOOK ======================
 async def setup_hook():
     print("🚀 Running setup_hook...")
@@ -512,7 +662,8 @@ async def setup_hook():
     client.add_view(GiveawayEnterView())
     client.add_view(FreeGiveawayView())
     asyncio.create_task(giveaway_checker(client))
-    print("✅ Giveaway checker started!")
+    asyncio.create_task(shop_checker(client))
+    print("✅ Giveaway + Shop checker started!")
 client.setup_hook = setup_hook
 # ====================== EVENTS ======================
 @client.event
