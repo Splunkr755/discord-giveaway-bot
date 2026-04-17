@@ -15,7 +15,7 @@ intents.message_content = True
 intents.members = True
 client = discord.Client(intents=intents)
 tree = app_commands.CommandTree(client)
-DATA_FILE = "bot_data.json"
+DATA_FILE = "/app/bot_data.json"
 data = {}
 def load_data():
     global data
