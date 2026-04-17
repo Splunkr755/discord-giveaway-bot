@@ -241,16 +241,9 @@ async def giveaway_checker(client):
             for mid in ended:
                 await finish_giveaway(guild, mid)
 
-# ====================== ALL COMMANDS (FULLY WRITTEN OUT) ======================
+# ====================== ALL COMMANDS ======================
 @tree.command(name="create_giveaway", description="Create a new raffle/giveaway (costs tickets to enter)")
-@app_commands.describe(
-    prize="What the winner gets",
-    duration="How long (e.g. 30s, 5m, 1h, 2d)",
-    winners="Number of winners",
-    image="Optional image for the embed",
-    ping_role="Role to ping when the giveaway starts (leave empty for no ping)",
-    channel="Channel to post the giveaway in (leave empty for current channel)"
-)
+@app_commands.describe(prize="What the winner gets", duration="How long (e.g. 30s, 5m, 1h, 2d)", winners="Number of winners", image="Optional image for the embed", ping_role="Role to ping when the giveaway starts (leave empty for no ping)", channel="Channel to post the giveaway in (leave empty for current channel)")
 @app_commands.default_permissions(administrator=True)
 async def create_giveaway(interaction: discord.Interaction, prize: str, duration: str, winners: int = 1, image: discord.Attachment = None, ping_role: discord.Role = None, channel: discord.TextChannel = None):
     guild_data = get_guild_data(interaction.guild.id)
@@ -264,42 +257,21 @@ async def create_giveaway(interaction: discord.Interaction, prize: str, duration
     await interaction.response.defer()
     seconds = parse_duration(duration)
     end_time = datetime.datetime.now(datetime.timezone.utc).timestamp() + seconds
-    embed = discord.Embed(
-        title="🎟️ **RAFFLE / GIVEAWAY** 🎟️",
-        description=f"**Prize:** {prize}\n**Winners:** {winners}\n**Ends:** <t:{int(end_time)}:R>\n**Giveaway ID:** `pending`\n\n**Entries:** 0 people (0 total tickets)\nClick the button below to enter with your tickets!",
-        color=0x00ff00
-    )
+    embed = discord.Embed(title="🎟️ **RAFFLE / GIVEAWAY** 🎟️", description=f"**Prize:** {prize}\n**Winners:** {winners}\n**Ends:** <t:{int(end_time)}:R>\n**Giveaway ID:** `pending`\n\n**Entries:** 0 people (0 total tickets)\nClick the button below to enter with your tickets!", color=0x00ff00)
     embed.set_footer(text=f"Hosted by {interaction.user.name}")
-    if image:
-        embed.set_image(url=image.url)
+    if image: embed.set_image(url=image.url)
     view = GiveawayEnterView()
     send_channel = channel or interaction.channel
     content = ping_role.mention if ping_role else None
     msg = await send_channel.send(content=content, embed=embed, view=view)
     guild_data = get_guild_data(interaction.guild.id)
-    guild_data["giveaways"][str(msg.id)] = {
-        "message_id": str(msg.id),
-        "prize": prize,
-        "winners": winners,
-        "end_time": end_time,
-        "channel_id": str(send_channel.id),
-        "host_name": interaction.user.name,
-        "image_url": image.url if image else None,
-        "entries": {}
-    }
+    guild_data["giveaways"][str(msg.id)] = {"message_id": str(msg.id), "prize": prize, "winners": winners, "end_time": end_time, "channel_id": str(send_channel.id), "host_name": interaction.user.name, "image_url": image.url if image else None, "entries": {}}
     save_data()
     await refresh_giveaway_embed(msg, guild_data["giveaways"][str(msg.id)])
     await interaction.followup.send(f"✅ Giveaway created in {send_channel.mention}!", ephemeral=True)
 
 @tree.command(name="create_free_giveaway", description="Create a free button-entry giveaway (winners get tickets)")
-@app_commands.describe(
-    prize_tickets="How many tickets each winner gets",
-    duration="How long (e.g. 30s, 5m, 1h, 2d)",
-    winners="Number of winners",
-    image="Optional image for the embed",
-    ping_role="Role to ping when the giveaway starts (leave empty for no ping)",
-    channel="Channel to post the giveaway in (leave empty for current channel)"
-)
+@app_commands.describe(prize_tickets="How many tickets each winner gets", duration="How long (e.g. 30s, 5m, 1h, 2d)", winners="Number of winners", image="Optional image for the embed", ping_role="Role to ping when the giveaway starts (leave empty for no ping)", channel="Channel to post the giveaway in (leave empty for current channel)")
 @app_commands.default_permissions(administrator=True)
 async def create_free_giveaway(interaction: discord.Interaction, prize_tickets: int, duration: str, winners: int = 1, image: discord.Attachment = None, ping_role: discord.Role = None, channel: discord.TextChannel = None):
     guild_data = get_guild_data(interaction.guild.id)
@@ -313,30 +285,15 @@ async def create_free_giveaway(interaction: discord.Interaction, prize_tickets: 
     await interaction.response.defer()
     seconds = parse_duration(duration)
     end_time = datetime.datetime.now(datetime.timezone.utc).timestamp() + seconds
-    embed = discord.Embed(
-        title="**TICKET GIVEAWAY**",
-        description=f"**Prize:** {prize_tickets} tickets each\n**Winners:** {winners}\n**Ends:** <t:{int(end_time)}:R>\n**Giveaway ID:** `pending`\n\n**Entries:** 0 people\nClick the button below to enter (free)!",
-        color=0x00ff88
-    )
+    embed = discord.Embed(title="**TICKET GIVEAWAY**", description=f"**Prize:** {prize_tickets} tickets each\n**Winners:** {winners}\n**Ends:** <t:{int(end_time)}:R>\n**Giveaway ID:** `pending`\n\n**Entries:** 0 people\nClick the button below to enter (free)!", color=0x00ff88)
     embed.set_footer(text=f"Hosted by {interaction.user.name}")
-    if image:
-        embed.set_image(url=image.url)
+    if image: embed.set_image(url=image.url)
     view = FreeGiveawayView()
     send_channel = channel or interaction.channel
     content = ping_role.mention if ping_role else None
     msg = await send_channel.send(content=content, embed=embed, view=view)
     guild_data = get_guild_data(interaction.guild.id)
-    guild_data["giveaways"][str(msg.id)] = {
-        "message_id": str(msg.id),
-        "prize_tickets": prize_tickets,
-        "winners": winners,
-        "end_time": end_time,
-        "channel_id": str(send_channel.id),
-        "host_name": interaction.user.name,
-        "image_url": image.url if image else None,
-        "entries": {},
-        "is_free": True
-    }
+    guild_data["giveaways"][str(msg.id)] = {"message_id": str(msg.id), "prize_tickets": prize_tickets, "winners": winners, "end_time": end_time, "channel_id": str(send_channel.id), "host_name": interaction.user.name, "image_url": image.url if image else None, "entries": {}, "is_free": True}
     save_data()
     await refresh_giveaway_embed(msg, guild_data["giveaways"][str(msg.id)])
     await interaction.followup.send(f"✅ Free giveaway created in {send_channel.mention}!", ephemeral=True)
@@ -517,8 +474,7 @@ async def set_ticket_chance(interaction: discord.Interaction, chance: float):
 @app_commands.describe(role="Role to give extra chance", extra_percent="Extra chance (0.1 = +10%)")
 @app_commands.default_permissions(administrator=True)
 async def set_role_chance_bonus(interaction: discord.Interaction, role: discord.Role, extra_percent: float):
-    if extra_percent < 0:
-        extra_percent = 0
+    if extra_percent < 0: extra_percent = 0
     guild_data = get_guild_data(interaction.guild.id)
     guild_data["role_chance_bonuses"][str(role.id)] = extra_percent
     save_data()
@@ -554,10 +510,7 @@ async def toggle_gifting(interaction: discord.Interaction):
     await interaction.response.send_message(f"✅ Ticket gifting is now **{status}**!", ephemeral=True)
 
 @tree.command(name="end_giveaway", description="End a giveaway early (or cancel + refund)")
-@app_commands.describe(
-    message="Message link or ID of the giveaway",
-    refund="Refund all tickets and cancel? (No = end normally and pick winners)"
-)
+@app_commands.describe(message="Message link or ID of the giveaway", refund="Refund all tickets and cancel? (No = end normally and pick winners)")
 @app_commands.default_permissions(administrator=True)
 async def end_giveaway(interaction: discord.Interaction, message: str, refund: bool = False):
     await interaction.response.defer(ephemeral=True)
@@ -589,7 +542,7 @@ async def remove_giveaway_blacklist_role(interaction: discord.Interaction, role:
         save_data()
     await interaction.response.send_message(f"✅ **{role.name}** can now host giveaways again!", ephemeral=True)
 
-# ====================== SETUP HOOK (THIS IS THE FIX) ======================
+# ====================== SETUP HOOK (ONLY ONE) ======================
 async def setup_hook():
     print("🚀 Running setup_hook...")
     load_data()
