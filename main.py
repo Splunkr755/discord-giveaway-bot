@@ -240,72 +240,6 @@ async def giveaway_checker(client):
             for mid in ended:
                 await finish_giveaway(guild, mid)
 
-# ====================== EVENTS ======================
-@client.event
-async def on_ready():
-    print(f'✅ Logged in as {client.user}')
-    load_data()
-    client.add_view(GiveawayEnterView())
-    client.add_view(FreeGiveawayView())
-    try:
-        # Clear old global commands (this fixes the duplicates)
-        print("Clearing old global commands...")
-        tree.clear_commands(guild=None)
-        await tree.sync()
-        print("✅ Old global commands cleared")
-
-        # Register fresh global commands
-        synced = await tree.sync()
-        print(f'✅ Synced {len(synced)} global command(s)')
-    except Exception as e:
-        print(f'❌ Sync failed: {e}')
-    asyncio.create_task(giveaway_checker(client))
-    print("✅ Giveaway checker started!")
-
-@client.event
-async def on_message(message: discord.Message):
-    if message.author.bot or not message.guild:
-        return
-    guild_data = get_guild_data(message.guild.id)
-    if str(message.channel.id) in guild_data.get("excluded_channels", []):
-        return
-    role_bonuses = guild_data.get("role_bonuses", {})
-    role_chance_bonuses = guild_data.get("role_chance_bonuses", {})
-    extra_tickets = 0
-    extra_chance = 0.0
-    for role in message.author.roles:
-        rid = str(role.id)
-        if rid in role_bonuses:
-            extra_tickets += role_bonuses[rid]
-        if rid in role_chance_bonuses:
-            extra_chance += role_chance_bonuses[rid]
-    base_chance = guild_data.get("ticket_chance", 0.25)
-    total_chance = base_chance + extra_chance
-    tickets_won = 0
-    chance = total_chance
-    while chance > 0:
-        if random.random() < min(chance, 1.0):
-            tickets_won += 1
-        chance -= 1.0
-    if tickets_won > 0:
-        total_tickets = tickets_won + extra_tickets
-        tickets_dict = guild_data.setdefault("tickets", {})
-        user_id_str = str(message.author.id)
-        current = tickets_dict.get(user_id_str, 0)
-        new_total = current + total_tickets
-        tickets_dict[user_id_str] = new_total
-        save_data()
-        ticket_channel_id = guild_data.get("ticket_channel")
-        announcement_channel = message.channel
-        if ticket_channel_id:
-            ch = message.guild.get_channel(int(ticket_channel_id))
-            if ch:
-                announcement_channel = ch
-        await announcement_channel.send(
-            f"🎟️ {message.author.mention} won **{total_tickets}** ticket(s)! "
-            f"(+{extra_tickets} from roles) **Total: {new_total}** 🎟️"
-        )
-
 # ====================== COMMANDS ======================
 @tree.command(name="create_giveaway", description="Create a new raffle/giveaway (costs tickets to enter)")
 @app_commands.describe(
@@ -663,6 +597,72 @@ async def remove_giveaway_blacklist_role(interaction: discord.Interaction, role:
         guild_data["giveaway_blacklist_roles"].remove(str(role.id))
         save_data()
     await interaction.response.send_message(f"✅ **{role.name}** can now host giveaways again!", ephemeral=True)
+
+# ====================== EVENTS ======================
+@client.event
+async def on_ready():
+    print(f'✅ Logged in as {client.user}')
+    load_data()
+    client.add_view(GiveawayEnterView())
+    client.add_view(FreeGiveawayView())
+    try:
+        # Clear old global commands first
+        print("Clearing old global commands...")
+        tree.clear_commands(guild=None)
+        await tree.sync()
+        print("✅ Old global commands cleared")
+
+        # Register fresh global commands
+        synced = await tree.sync()
+        print(f'✅ Synced {len(synced)} global command(s)')
+    except Exception as e:
+        print(f'❌ Sync failed: {e}')
+    asyncio.create_task(giveaway_checker(client))
+    print("✅ Giveaway checker started!")
+
+@client.event
+async def on_message(message: discord.Message):
+    if message.author.bot or not message.guild:
+        return
+    guild_data = get_guild_data(message.guild.id)
+    if str(message.channel.id) in guild_data.get("excluded_channels", []):
+        return
+    role_bonuses = guild_data.get("role_bonuses", {})
+    role_chance_bonuses = guild_data.get("role_chance_bonuses", {})
+    extra_tickets = 0
+    extra_chance = 0.0
+    for role in message.author.roles:
+        rid = str(role.id)
+        if rid in role_bonuses:
+            extra_tickets += role_bonuses[rid]
+        if rid in role_chance_bonuses:
+            extra_chance += role_chance_bonuses[rid]
+    base_chance = guild_data.get("ticket_chance", 0.25)
+    total_chance = base_chance + extra_chance
+    tickets_won = 0
+    chance = total_chance
+    while chance > 0:
+        if random.random() < min(chance, 1.0):
+            tickets_won += 1
+        chance -= 1.0
+    if tickets_won > 0:
+        total_tickets = tickets_won + extra_tickets
+        tickets_dict = guild_data.setdefault("tickets", {})
+        user_id_str = str(message.author.id)
+        current = tickets_dict.get(user_id_str, 0)
+        new_total = current + total_tickets
+        tickets_dict[user_id_str] = new_total
+        save_data()
+        ticket_channel_id = guild_data.get("ticket_channel")
+        announcement_channel = message.channel
+        if ticket_channel_id:
+            ch = message.guild.get_channel(int(ticket_channel_id))
+            if ch:
+                announcement_channel = ch
+        await announcement_channel.send(
+            f"🎟️ {message.author.mention} won **{total_tickets}** ticket(s)! "
+            f"(+{extra_tickets} from roles) **Total: {new_total}** 🎟️"
+        )
 
 if __name__ == "__main__":
     if not TOKEN:
