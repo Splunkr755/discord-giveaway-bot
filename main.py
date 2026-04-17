@@ -248,11 +248,15 @@ async def on_ready():
     client.add_view(GiveawayEnterView())
     client.add_view(FreeGiveawayView())
     try:
-        # FIXED: Only guild sync to remove duplicates
-        for guild in client.guilds:
-            tree.copy_global_to(guild=guild)
-            synced = await tree.sync(guild=guild)
-            print(f'✅ Synced {len(synced)} command(s) to guild: {guild.name} ({guild.id})')
+        # === FIX FOR DUPLICATE GLOBAL COMMANDS ===
+        print("Clearing old global commands...")
+        tree.clear_commands(guild=None)
+        await tree.sync()                    # clears all lingering global commands
+        print("✅ Old global commands cleared")
+
+        # Register fresh global commands (available in all servers)
+        synced = await tree.sync()
+        print(f'✅ Synced {len(synced)} global command(s)')
     except Exception as e:
         print(f'❌ Sync failed: {e}')
     asyncio.create_task(giveaway_checker(client))
