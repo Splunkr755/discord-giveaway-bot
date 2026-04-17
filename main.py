@@ -17,7 +17,6 @@ client = discord.Client(intents=intents)
 tree = app_commands.CommandTree(client)
 DATA_FILE = "bot_data.json"
 data = {}
-last_earned = {}  # cooldown for ticket farming (max 1 ticket every 5 seconds per user)
 def load_data():
     global data
     if os.path.exists(DATA_FILE):
@@ -543,21 +542,19 @@ async def on_message(message: discord.Message):
         extra = guild_data.get("role_chance_bonuses", {}).get(str(role.id), 0.0)
         extra_chance += extra
     final_chance = min(1.0, base_chance + extra_chance)
-    # Cooldown (max once every 5 seconds even at 100%)
-    user_id = str(message.author.id)
-    now = datetime.datetime.now().timestamp()
-    if user_id in last_earned and now - last_earned[user_id] < 5:
-        return
-    last_earned[user_id] = now
-    # Roll for ticket
+    # Roll for ticket - NO cooldown
     if random.random() < final_chance:
         tickets_dict = guild_data.setdefault("tickets", {})
+        user_id = str(message.author.id)
         old = tickets_dict.get(user_id, 0)
         tickets_dict[user_id] = old + 1
         save_data()
-        # Visual feedback
+        # Send message (exactly as you wanted)
         try:
-            await message.add_reaction("🎟️")
+            await message.channel.send(
+                f"🎟️ **Ticket earned!** {message.author.mention} now has **{old + 1}** tickets!",
+                delete_after=8  # auto-deletes so channel doesn't get flooded
+            )
         except:
             pass
         print(f"🎟️ TICKET AWARDED to {message.author} (now has {old+1}) | Chance was {final_chance*100:.1f}%")
