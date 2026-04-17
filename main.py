@@ -8,20 +8,16 @@ import datetime
 import re
 import traceback
 from dotenv import load_dotenv
-
 load_dotenv()
-
 TOKEN = os.getenv("DISCORD_TOKEN")
-
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
 client = discord.Client(intents=intents)
 tree = app_commands.CommandTree(client)
-
 DATA_FILE = "bot_data.json"
 data = {}
-
+last_earned = {}  # cooldown for ticket farming (max 1 ticket every 5 seconds per user)
 def load_data():
     global data
     if os.path.exists(DATA_FILE):
@@ -29,11 +25,9 @@ def load_data():
             data = json.load(f)
     else:
         data = {"guilds": {}}
-
 def save_data():
     with open(DATA_FILE, "w") as f:
         json.dump(data, f, indent=4)
-
 def get_guild_data(guild_id):
     gid = str(guild_id)
     if "guilds" not in data:
@@ -63,7 +57,6 @@ def get_guild_data(guild_id):
         if "giveaway_blacklist_roles" not in gd: gd["giveaway_blacklist_roles"] = []
         if "ticket_mod_role" not in gd: gd["ticket_mod_role"] = None
     return data["guilds"][gid]
-
 # ====================== VIEWS & MODALS ======================
 class TicketEntryModal(discord.ui.Modal, title="🎟️ Enter the Raffle"):
     def __init__(self, giveaway_message_id: str, max_tickets: int):
@@ -78,7 +71,6 @@ class TicketEntryModal(discord.ui.Modal, title="🎟️ Enter the Raffle"):
             max_length=10
         )
         self.add_item(self.amount)
-
     async def on_submit(self, interaction: discord.Interaction):
         if not interaction.guild: return
         try:
@@ -112,11 +104,9 @@ class TicketEntryModal(discord.ui.Modal, title="🎟️ Enter the Raffle"):
             f"Tickets left: **{current_tickets - amount}**",
             ephemeral=True
         )
-
 class GiveawayEnterView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
-
     @discord.ui.button(label="Enter Raffle", style=discord.ButtonStyle.green, custom_id="giveaway_enter_modal")
     async def enter_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not interaction.guild: return
@@ -131,11 +121,9 @@ class GiveawayEnterView(discord.ui.View):
             return
         modal = TicketEntryModal(message_id, current_tickets)
         await interaction.response.send_modal(modal)
-
 class FreeGiveawayView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
-
     @discord.ui.button(label="Enter Giveaway", style=discord.ButtonStyle.green, custom_id="free_giveaway_enter")
     async def enter_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not interaction.guild: return
@@ -157,7 +145,6 @@ class FreeGiveawayView(discord.ui.View):
         except:
             pass
         await interaction.response.send_message("✅ You have entered the giveaway!", ephemeral=True)
-
 # ====================== LIVE EMBED REFRESH ======================
 async def refresh_giveaway_embed(message: discord.Message, giveaway: dict):
     entries = giveaway.get("entries", {})
@@ -177,7 +164,6 @@ async def refresh_giveaway_embed(message: discord.Message, giveaway: dict):
     if giveaway.get("image_url"):
         embed.set_image(url=giveaway["image_url"])
     await message.edit(embed=embed)
-
 # ====================== HELPERS ======================
 def parse_duration(duration_str: str) -> int:
     duration_str = duration_str.lower().strip()
@@ -192,7 +178,6 @@ def parse_duration(duration_str: str) -> int:
         elif unit == 'm': total += amount * 60
         else: total += amount
     return total if total > 0 else 300
-
 async def finish_giveaway(guild: discord.Guild, message_id: str, refund: bool = False):
     guild_data = get_guild_data(guild.id)
     if message_id not in guild_data["giveaways"]:
@@ -229,7 +214,6 @@ async def finish_giveaway(guild: discord.Guild, message_id: str, refund: bool = 
                 await channel.send(f"🎉 **GIVEAWAY ENDED!**\n**Prize:** {giveaway['prize']}\n**Winners:** {winner_mentions}\nCongrats! 🎟️")
     del guild_data["giveaways"][message_id]
     save_data()
-
 async def giveaway_checker(client):
     await client.wait_until_ready()
     while True:
@@ -240,7 +224,6 @@ async def giveaway_checker(client):
             ended = [mid for mid, g in list(guild_data["giveaways"].items()) if now > g.get("end_time", 0)]
             for mid in ended:
                 await finish_giveaway(guild, mid)
-
 # ====================== ALL COMMANDS ======================
 @tree.command(name="create_giveaway", description="Create a new raffle/giveaway (costs tickets to enter)")
 @app_commands.describe(prize="What the winner gets", duration="How long (e.g. 30s, 5m, 1h, 2d)", winners="Number of winners", image="Optional image for the embed", ping_role="Role to ping when the giveaway starts (leave empty for no ping)", channel="Channel to post the giveaway in (leave empty for current channel)")
@@ -269,7 +252,6 @@ async def create_giveaway(interaction: discord.Interaction, prize: str, duration
     save_data()
     await refresh_giveaway_embed(msg, guild_data["giveaways"][str(msg.id)])
     await interaction.followup.send(f"✅ Giveaway created in {send_channel.mention}!", ephemeral=True)
-
 @tree.command(name="create_free_giveaway", description="Create a free button-entry giveaway (winners get tickets)")
 @app_commands.describe(prize_tickets="How many tickets each winner gets", duration="How long (e.g. 30s, 5m, 1h, 2d)", winners="Number of winners", image="Optional image for the embed", ping_role="Role to ping when the giveaway starts (leave empty for no ping)", channel="Channel to post the giveaway in (leave empty for current channel)")
 @app_commands.default_permissions(administrator=True)
@@ -297,7 +279,6 @@ async def create_free_giveaway(interaction: discord.Interaction, prize_tickets: 
     save_data()
     await refresh_giveaway_embed(msg, guild_data["giveaways"][str(msg.id)])
     await interaction.followup.send(f"✅ Free giveaway created in {send_channel.mention}!", ephemeral=True)
-
 @tree.command(name="set_giveaway_host_role", description="Set the role required to host giveaways (Admins only)")
 @app_commands.describe(role="Role that can host giveaways (leave empty to remove restriction)")
 @app_commands.default_permissions(administrator=True)
@@ -309,7 +290,6 @@ async def set_giveaway_host_role(interaction: discord.Interaction, role: discord
         await interaction.response.send_message(f"✅ Only users with the **{role.name}** role can now host giveaways!", ephemeral=True)
     else:
         await interaction.response.send_message("✅ Host role restriction removed — only admins can host giveaways!", ephemeral=True)
-
 @tree.command(name="set_ticket_mod_role", description="Set the role required to give/remove tickets (Admins only)")
 @app_commands.describe(role="Role that can give/remove tickets (leave empty to remove restriction)")
 @app_commands.default_permissions(administrator=True)
@@ -321,7 +301,6 @@ async def set_ticket_mod_role(interaction: discord.Interaction, role: discord.Ro
         await interaction.response.send_message(f"✅ Only users with the **{role.name}** role can now give/remove tickets!", ephemeral=True)
     else:
         await interaction.response.send_message("✅ Ticket mod role restriction removed — only admins can give/remove tickets!", ephemeral=True)
-
 @tree.command(name="give_tickets", description="Give tickets to a user")
 @app_commands.describe(user="User to give tickets to", amount="How many tickets")
 @app_commands.default_permissions(administrator=True)
@@ -339,7 +318,6 @@ async def give_tickets(interaction: discord.Interaction, user: discord.Member, a
     tickets_dict[uid] = tickets_dict.get(uid, 0) + amount
     save_data()
     await interaction.response.send_message(f"✅ Gave **{amount}** tickets to {user.mention}!", ephemeral=False)
-
 @tree.command(name="remove_tickets", description="Remove tickets from a user")
 @app_commands.describe(user="User to remove tickets from", amount="How many tickets")
 @app_commands.default_permissions(administrator=True)
@@ -359,7 +337,6 @@ async def remove_tickets(interaction: discord.Interaction, user: discord.Member,
     tickets_dict[uid] = new_amount
     save_data()
     await interaction.response.send_message(f"✅ Removed **{amount}** tickets from {user.mention} (now has {new_amount})!", ephemeral=False)
-
 @tree.command(name="gift_tickets", description="Gift tickets to another user")
 @app_commands.describe(user="User to gift to", amount="How many tickets")
 async def gift_tickets(interaction: discord.Interaction, user: discord.Member, amount: int):
@@ -384,7 +361,6 @@ async def gift_tickets(interaction: discord.Interaction, user: discord.Member, a
     tickets_dict[receiver_id] = tickets_dict.get(receiver_id, 0) + amount
     save_data()
     await interaction.response.send_message(f"✅ You gifted **{amount}** tickets to {user.mention}!", ephemeral=False)
-
 @tree.command(name="my_tickets", description="Check your ticket count")
 async def my_tickets(interaction: discord.Interaction):
     if not interaction.guild:
@@ -394,7 +370,6 @@ async def my_tickets(interaction: discord.Interaction):
     user_id_str = str(interaction.user.id)
     tickets = guild_data.get("tickets", {}).get(user_id_str, 0)
     await interaction.response.send_message(f"🎟️ You currently have **{tickets}** tickets!", ephemeral=True)
-
 @tree.command(name="set_role_bonus", description="Set extra tickets a role gets on win (Admins only)")
 @app_commands.describe(role="Role to configure", extra="Extra tickets on win (0 = remove)")
 @app_commands.default_permissions(administrator=True)
@@ -411,7 +386,6 @@ async def set_role_bonus(interaction: discord.Interaction, role: discord.Role, e
         msg = f"✅ **{role.name}** now gives **+{extra}** extra ticket(s) when winning!"
     save_data()
     await interaction.response.send_message(msg)
-
 @tree.command(name="set_ticket_channel", description="Set the channel where ticket win messages appear (Admins only)")
 @app_commands.describe(channel="Channel for ticket announcements (leave empty to disable)")
 @app_commands.default_permissions(administrator=True)
@@ -425,7 +399,6 @@ async def set_ticket_channel(interaction: discord.Interaction, channel: discord.
         msg = f"✅ Ticket announcements will now be sent to {channel.mention}!"
     save_data()
     await interaction.response.send_message(msg)
-
 @tree.command(name="list_role_bonuses", description="List all role bonuses + current settings")
 async def list_role_bonuses(interaction: discord.Interaction):
     if not interaction.guild:
@@ -456,7 +429,6 @@ async def list_role_bonuses(interaction: discord.Interaction):
             rname = role.name if role else f"Unknown ({rid_str})"
             lines.append(f"• **{rname}**: +{bonus*100:.0f}% chance")
     await interaction.response.send_message("\n".join(lines))
-
 @tree.command(name="set_ticket_chance", description="Change the base chance of winning a ticket per message (Admins only)")
 @app_commands.describe(chance="Chance as decimal (0.01 = 1%, 0.25 = 25%, 0.5 = 50%)")
 @app_commands.default_permissions(administrator=True)
@@ -469,7 +441,6 @@ async def set_ticket_chance(interaction: discord.Interaction, chance: float):
     save_data()
     percent = int(chance * 100)
     await interaction.response.send_message(f"✅ Base ticket win chance is now **{percent}%** per message!", ephemeral=True)
-
 @tree.command(name="set_role_chance_bonus", description="Add extra % chance per message for a role")
 @app_commands.describe(role="Role to give extra chance", extra_percent="Extra chance (0.1 = +10%)")
 @app_commands.default_permissions(administrator=True)
@@ -479,7 +450,6 @@ async def set_role_chance_bonus(interaction: discord.Interaction, role: discord.
     guild_data["role_chance_bonuses"][str(role.id)] = extra_percent
     save_data()
     await interaction.response.send_message(f"✅ **{role.name}** now gets **+{extra_percent*100:.0f}%** extra ticket chance per message!", ephemeral=True)
-
 @tree.command(name="add_excluded_channel", description="Add a channel where users cannot earn tickets")
 @app_commands.describe(channel="Channel to exclude")
 @app_commands.default_permissions(administrator=True)
@@ -489,7 +459,6 @@ async def add_excluded_channel(interaction: discord.Interaction, channel: discor
         guild_data["excluded_channels"].append(str(channel.id))
         save_data()
     await interaction.response.send_message(f"✅ {channel.mention} is now **excluded** from ticket farming!", ephemeral=True)
-
 @tree.command(name="remove_excluded_channel", description="Remove a channel from the excluded list")
 @app_commands.describe(channel="Channel to remove from excluded list")
 @app_commands.default_permissions(administrator=True)
@@ -499,7 +468,6 @@ async def remove_excluded_channel(interaction: discord.Interaction, channel: dis
         guild_data["excluded_channels"].remove(str(channel.id))
         save_data()
     await interaction.response.send_message(f"✅ {channel.mention} can now earn tickets again!", ephemeral=True)
-
 @tree.command(name="toggle_gifting", description="Turn ticket gifting on/off (Admin only)")
 @app_commands.default_permissions(administrator=True)
 async def toggle_gifting(interaction: discord.Interaction):
@@ -508,7 +476,6 @@ async def toggle_gifting(interaction: discord.Interaction):
     save_data()
     status = "enabled" if guild_data["gifting_enabled"] else "disabled"
     await interaction.response.send_message(f"✅ Ticket gifting is now **{status}**!", ephemeral=True)
-
 @tree.command(name="end_giveaway", description="End a giveaway early (or cancel + refund)")
 @app_commands.describe(message="Message link or ID of the giveaway", refund="Refund all tickets and cancel? (No = end normally and pick winners)")
 @app_commands.default_permissions(administrator=True)
@@ -521,7 +488,6 @@ async def end_giveaway(interaction: discord.Interaction, message: str, refund: b
     await finish_giveaway(interaction.guild, message_id, refund)
     action = "cancelled & refunded" if refund else "ended early"
     await interaction.followup.send(f"✅ Giveaway **{action}**!", ephemeral=True)
-
 @tree.command(name="add_giveaway_blacklist_role", description="Add a role that cannot host giveaways")
 @app_commands.describe(role="Role to blacklist from hosting")
 @app_commands.default_permissions(administrator=True)
@@ -531,7 +497,6 @@ async def add_giveaway_blacklist_role(interaction: discord.Interaction, role: di
         guild_data["giveaway_blacklist_roles"].append(str(role.id))
         save_data()
     await interaction.response.send_message(f"✅ **{role.name}** can no longer host giveaways!", ephemeral=True)
-
 @tree.command(name="remove_giveaway_blacklist_role", description="Remove a role from the giveaway blacklist")
 @app_commands.describe(role="Role to remove from blacklist")
 @app_commands.default_permissions(administrator=True)
@@ -541,7 +506,6 @@ async def remove_giveaway_blacklist_role(interaction: discord.Interaction, role:
         guild_data["giveaway_blacklist_roles"].remove(str(role.id))
         save_data()
     await interaction.response.send_message(f"✅ **{role.name}** can now host giveaways again!", ephemeral=True)
-
 # ====================== SETUP HOOK ======================
 async def setup_hook():
     print("🚀 Running setup_hook...")
@@ -550,9 +514,7 @@ async def setup_hook():
     client.add_view(FreeGiveawayView())
     asyncio.create_task(giveaway_checker(client))
     print("✅ Giveaway checker started!")
-
 client.setup_hook = setup_hook
-
 # ====================== EVENTS ======================
 @client.event
 async def on_ready():
@@ -565,7 +527,41 @@ async def on_ready():
     except Exception as e:
         print(f'❌ Sync failed: {e}')
         traceback.print_exc()
-
+# ====================== TICKET FARMING FROM CHAT ======================
+@client.event
+async def on_message(message: discord.Message):
+    if message.author.bot or not message.guild:
+        return
+    guild_data = get_guild_data(message.guild.id)
+    # Skip excluded channels
+    if str(message.channel.id) in guild_data.get("excluded_channels", []):
+        return
+    # Calculate final chance (base + role bonuses)
+    base_chance = guild_data.get("ticket_chance", 0.25)
+    extra_chance = 0.0
+    for role in message.author.roles:
+        extra = guild_data.get("role_chance_bonuses", {}).get(str(role.id), 0.0)
+        extra_chance += extra
+    final_chance = min(1.0, base_chance + extra_chance)
+    # Cooldown (max once every 5 seconds even at 100%)
+    user_id = str(message.author.id)
+    now = datetime.datetime.now().timestamp()
+    if user_id in last_earned and now - last_earned[user_id] < 5:
+        return
+    last_earned[user_id] = now
+    # Roll for ticket
+    if random.random() < final_chance:
+        tickets_dict = guild_data.setdefault("tickets", {})
+        old = tickets_dict.get(user_id, 0)
+        tickets_dict[user_id] = old + 1
+        save_data()
+        # Visual feedback
+        try:
+            await message.add_reaction("🎟️")
+        except:
+            pass
+        print(f"🎟️ TICKET AWARDED to {message.author} (now has {old+1}) | Chance was {final_chance*100:.1f}%")
+# ====================== RUN BOT ======================
 if __name__ == "__main__":
     if not TOKEN:
         print("❌ DISCORD_TOKEN environment variable is missing!")
