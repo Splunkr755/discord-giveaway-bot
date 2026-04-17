@@ -526,7 +526,7 @@ async def on_ready():
     except Exception as e:
         print(f'❌ Sync failed: {e}')
         traceback.print_exc()
-# ====================== TICKET FARMING FROM CHAT (WORKING VERSION FROM OLD CODE) ======================
+# ====================== TICKET FARMING FROM CHAT ======================
 @client.event
 async def on_message(message: discord.Message):
     if message.author.bot or not message.guild:
@@ -561,17 +561,21 @@ async def on_message(message: discord.Message):
         new_total = current + total_tickets
         tickets_dict[user_id_str] = new_total
         save_data()
-        # Announcement (exactly like your old working version)
+        # Announcement with auto-delete after 12 seconds
         ticket_channel_id = guild_data.get("ticket_channel")
         announcement_channel = message.channel
         if ticket_channel_id:
             ch = message.guild.get_channel(int(ticket_channel_id))
             if ch:
                 announcement_channel = ch
-        await announcement_channel.send(
-            f"🎟️ {message.author.mention} won **{total_tickets}** ticket(s)! "
-            f"(+{extra_tickets} from roles) **Total: {new_total}** 🎟️"
-        )
+        try:
+            await announcement_channel.send(
+                f"🎟️ {message.author.mention} won **{total_tickets}** ticket(s)! "
+                f"(+{extra_tickets} from roles) **Total: {new_total}** 🎟️",
+                delete_after=12
+            )
+        except:
+            pass
         print(f"🎟️ TICKET AWARDED to {message.author} (+{extra_tickets} role bonus) → now has {new_total}")
 # ====================== RUN BOT ======================
 if __name__ == "__main__":
