@@ -265,12 +265,7 @@ async def create_giveaway(interaction: discord.Interaction, prize: str, duration
     end_time = datetime.datetime.now(datetime.timezone.utc).timestamp() + seconds
     embed = discord.Embed(
         title="🎟️ **RAFFLE / GIVEAWAY** 🎟️",
-        description=f"**Prize:** {prize}\n"
-                    f"**Winners:** {winners}\n"
-                    f"**Ends:** <t:{int(end_time)}:R>\n"
-                    f"**Giveaway ID:** `pending`\n\n"
-                    f"**Entries:** 0 people (0 total tickets)\n"
-                    f"Click the button below to enter with your tickets!",
+        description=f"**Prize:** {prize}\n**Winners:** {winners}\n**Ends:** <t:{int(end_time)}:R>\n**Giveaway ID:** `pending`\n\n**Entries:** 0 people (0 total tickets)\nClick the button below to enter with your tickets!",
         color=0x00ff00
     )
     embed.set_footer(text=f"Hosted by {interaction.user.name}")
@@ -319,12 +314,7 @@ async def create_free_giveaway(interaction: discord.Interaction, prize_tickets: 
     end_time = datetime.datetime.now(datetime.timezone.utc).timestamp() + seconds
     embed = discord.Embed(
         title="**TICKET GIVEAWAY**",
-        description=f"**Prize:** {prize_tickets} tickets each\n"
-                    f"**Winners:** {winners}\n"
-                    f"**Ends:** <t:{int(end_time)}:R>\n"
-                    f"**Giveaway ID:** `pending`\n\n"
-                    f"**Entries:** 0 people\n"
-                    f"Click the button below to enter (free)!",
+        description=f"**Prize:** {prize_tickets} tickets each\n**Winners:** {winners}\n**Ends:** <t:{int(end_time)}:R>\n**Giveaway ID:** `pending`\n\n**Entries:** 0 people\nClick the button below to enter (free)!",
         color=0x00ff88
     )
     embed.set_footer(text=f"Hosted by {interaction.user.name}")
