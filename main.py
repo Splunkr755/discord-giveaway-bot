@@ -248,8 +248,7 @@ async def on_ready():
     client.add_view(GiveawayEnterView())
     client.add_view(FreeGiveawayView())
     try:
-        await tree.sync()
-        print("✅ Cleared old global commands")
+        # FIXED: Only guild sync to remove duplicates
         for guild in client.guilds:
             tree.copy_global_to(guild=guild)
             synced = await tree.sync(guild=guild)
@@ -303,7 +302,7 @@ async def on_message(message: discord.Message):
             f"(+{extra_tickets} from roles) **Total: {new_total}** 🎟️"
         )
 
-# ====================== ALL COMMANDS ======================
+# ====================== COMMANDS ======================
 @tree.command(name="create_giveaway", description="Create a new raffle/giveaway (costs tickets to enter)")
 @app_commands.describe(
     prize="What the winner gets",
