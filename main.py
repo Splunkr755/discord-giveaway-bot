@@ -542,7 +542,7 @@ async def remove_giveaway_blacklist_role(interaction: discord.Interaction, role:
         save_data()
     await interaction.response.send_message(f"✅ **{role.name}** can now host giveaways again!", ephemeral=True)
 
-# ====================== SETUP HOOK (QUICK ONLY) ======================
+# ====================== SETUP HOOK ======================
 async def setup_hook():
     print("🚀 Running setup_hook...")
     load_data()
@@ -557,6 +557,9 @@ client.setup_hook = setup_hook
 @client.event
 async def on_ready():
     print(f'✅ Logged in as {client.user}')
+    # DEBUG: Tell us how many commands actually got registered
+    command_count = len(list(tree.walk_commands()))
+    print(f"DEBUG: {command_count} commands are in the tree before syncing")
     try:
         print("Clearing old global commands...")
         tree.clear_commands(guild=None)
