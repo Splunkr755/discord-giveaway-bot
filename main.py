@@ -240,7 +240,7 @@ async def giveaway_checker(client):
             for mid in ended:
                 await finish_giveaway(guild, mid)
 
-# ====================== COMMANDS ======================
+# ====================== ALL COMMANDS (defined BEFORE on_ready) ======================
 @tree.command(name="create_giveaway", description="Create a new raffle/giveaway (costs tickets to enter)")
 @app_commands.describe(
     prize="What the winner gets",
@@ -606,13 +606,11 @@ async def on_ready():
     client.add_view(GiveawayEnterView())
     client.add_view(FreeGiveawayView())
     try:
-        # Clear old global commands first
         print("Clearing old global commands...")
         tree.clear_commands(guild=None)
         await tree.sync()
         print("✅ Old global commands cleared")
 
-        # Register fresh global commands
         synced = await tree.sync()
         print(f'✅ Synced {len(synced)} global command(s)')
     except Exception as e:
