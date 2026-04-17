@@ -669,14 +669,14 @@ client.setup_hook = setup_hook
 @client.event
 async def on_ready():
     print(f'✅ Logged in as {client.user}')
-    command_count = len(list(tree.walk_commands()))
-    print(f"DEBUG: {command_count} commands are in the tree before syncing")
-    try:
-        synced = await tree.sync()
-        print(f'✅ Synced {len(synced)} global command(s)')
-    except Exception as e:
-        print(f'❌ Sync failed: {e}')
-        traceback.print_exc()
+    # Guild-specific sync for EVERY server the bot is in (fixes duplicates)
+    for guild in client.guilds:
+        try:
+            synced = await tree.sync(guild=guild)
+            print(f'✅ Synced {len(synced)} commands to guild: {guild.name} ({guild.id})')
+        except Exception as e:
+            print(f'❌ Sync failed for {guild.name}: {e}')
+            traceback.print_exc()
 # ====================== TICKET FARMING FROM CHAT ======================
 @client.event
 async def on_message(message: discord.Message):
