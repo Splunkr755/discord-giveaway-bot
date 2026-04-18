@@ -20,7 +20,7 @@ tree = app_commands.CommandTree(client)
 DATA_FILE = "/data/bot_data.json"
 data = {}
 invite_cache = {}
-last_crystal_time = {}  # user_id -> timestamp
+last_crystal_time = {}
 def load_data():
     global data
     if os.path.exists(DATA_FILE):
@@ -185,7 +185,6 @@ class ChestView(discord.ui.View):
         if not guild_data["chest_items"]:
             await interaction.response.send_message("No chest items available!", ephemeral=True)
             return
-        # Simple random chest item for first version (can expand)
         item_name = random.choice(list(guild_data["chest_items"].keys()))
         item = guild_data["chest_items"][item_name]
         cost = item.get("crystal_cost", 50)
@@ -194,7 +193,6 @@ class ChestView(discord.ui.View):
             return
         guild_data["crystals"][user_id] = crystals - cost
         save_data()
-        # Roll reward
         rewards = item.get("rewards", [{"type": "crystals", "amount": 100, "chance": 1.0}])
         roll = random.random()
         cumulative = 0
@@ -214,7 +212,6 @@ class ChestView(discord.ui.View):
                 break
         save_data()
         await interaction.response.send_message(f"🎉 You opened a chest and got **{reward_text}**!", ephemeral=False)
-        # Rare check
         if any(r.get("chance", 0) <= 0.001 for r in rewards):
             special_ch = interaction.guild.get_channel(int(guild_data.get("special_reward_channel_id", 0)))
             if special_ch:
@@ -621,102 +618,19 @@ async def setup_chest(interaction: discord.Interaction):
         return
     embed = discord.Embed(title="🎁 Server Chests", description="Open a chest with crystals for amazing rewards!", color=0xff00ff)
     view = ChestView(guild_data)
-    msg = await channel.send(embed=embed, view=view)
+    await channel.send(embed=embed, view=view)
     await interaction.response.send_message(f"✅ Chest embed posted in {channel.mention}!", ephemeral=True)
-@tree.command(name="give_tickets", description="Give tickets to a user")
-@app_commands.describe(user="User to give tickets to", amount="How many tickets")
+@tree.command(name="force_sync", description="Force sync all commands to this server (Admin only)")
 @app_commands.default_permissions(administrator=True)
-async def give_tickets(interaction: discord.Interaction, user: discord.Member, amount: int):
-    guild_data = get_guild_data(interaction.guild.id)
-    mod_role_id = guild_data.get("ticket_mod_role")
-    if mod_role_id and not any(str(role.id) == mod_role_id for role in interaction.user.roles):
-        await interaction.response.send_message("❌ You do not have permission to give tickets!", ephemeral=False)
-        return
-    if amount < 1:
-        await interaction.response.send_message("Amount must be at least 1!", ephemeral=False)
-        return
-    tickets_dict = guild_data.setdefault("tickets", {})
-    uid = str(user.id)
-    tickets_dict[uid] = tickets_dict.get(uid, 0) + amount
-    save_data()
-    await interaction.response.send_message(f"✅ Gave **{amount}** tickets to {user.mention}!", ephemeral=False)
-# (the rest of your old commands are kept exactly as before - I didn't change them)
-@tree.command(name="remove_shop_item", description="Remove an item from the server shop")
-@app_commands.describe(name="Name of the item to remove")
-async def remove_shop_item(interaction: discord.Interaction, name: str):
-    guild_data = get_guild_data(interaction.guild.id)
-    manager_role_id = guild_data.get("shop_manager_role")
-    is_manager = manager_role_id is None or any(str(r.id) == manager_role_id for r in interaction.user.roles)
-    if not is_manager and not interaction.user.guild_permissions.administrator:
-        await interaction.response.send_message("❌ You do not have permission to manage the shop!", ephemeral=True)
-        return
-    if name not in guild_data["shop_items"]:
-        await interaction.response.send_message("❌ That item does not exist!", ephemeral=True)
-        return
-    del guild_data["shop_items"][name]
-    save_data()
-    await interaction.response.send_message(f"✅ Shop item **{name}** has been removed!", ephemeral=True)
-@tree.command(name="shop", description="View the current server shop")
-async def shop(interaction: discord.Interaction):
-    if not interaction.guild:
-        await interaction.response.send_message("This only works in servers!", ephemeral=True)
-        return
-    guild_data = get_guild_data(interaction.guild.id)
-    if not guild_data["shop_items"]:
-        await interaction.response.send_message("🛒 The shop is currently empty!", ephemeral=True)
-        return
-    view = ShopView(guild_data)
-    await interaction.response.send_message(embed=view.get_embed(), view=view)
-@tree.command(name="buy", description="Buy an item from the shop")
-@app_commands.describe(item="Name of the item to buy")
-async def buy(interaction: discord.Interaction, item: str):
-    if not interaction.guild:
-        await interaction.response.send_message("This only works in servers!", ephemeral=True)
-        return
-    guild_data = get_guild_data(interaction.guild.id)
-    if item not in guild_data["shop_items"]:
-        await interaction.response.send_message("❌ That item does not exist in the shop!", ephemeral=True)
-        return
-    shop_item = guild_data["shop_items"][item]
-    now = datetime.datetime.now(datetime.timezone.utc).timestamp()
-    if shop_item.get("expires_at") and now > shop_item["expires_at"]:
-        del guild_data["shop_items"][item]
-        save_data()
-        await interaction.response.send_message("❌ This item has expired!", ephemeral=True)
-        return
-    if shop_item.get("server_stock") is not None and shop_item["server_stock"] <= 0:
-        await interaction.response.send_message("❌ This item is out of stock!", ephemeral=True)
-        return
-    user_id = str(interaction.user.id)
-    bought = shop_item["purchases"].get(user_id, 0)
-    if shop_item.get("per_user_limit") is not None and bought >= shop_item["per_user_limit"]:
-        await interaction.response.send_message(f"❌ You have already reached the limit for this item!", ephemeral=True)
-        return
-    tickets_dict = guild_data.setdefault("tickets", {})
-    current_tickets = tickets_dict.get(user_id, 0)
-    if current_tickets < shop_item["price"]:
-        await interaction.response.send_message(f"❌ You only have **{current_tickets}** tickets. Need **{shop_item['price']}**!", ephemeral=True)
-        return
-    tickets_dict[user_id] = current_tickets - shop_item["price"]
-    shop_item["purchases"][user_id] = bought + 1
-    if shop_item.get("server_stock") is not None:
-        shop_item["server_stock"] -= 1
-    save_data()
-    role_id = shop_item.get("role_id")
-    if role_id:
-        try:
-            role = interaction.guild.get_role(int(role_id))
-            if role:
-                await interaction.user.add_roles(role)
-                await interaction.response.send_message(f"✅ **Purchase successful!** You received the **{role.name}** role!", ephemeral=False)
-                return
-        except Exception as e:
-            print(f"Role assignment failed: {e}")
-    await interaction.response.send_message(
-        f"✅ **Purchase successful!** You bought **{item}** for `{shop_item['price']}` tickets.\n"
-        f"Open a ticket to claim your prize (include a screenshot of this message).",
-        ephemeral=False
-    )
+async def force_sync(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    try:
+        synced = await tree.sync(guild=interaction.guild)
+        await interaction.followup.send(f"✅ Successfully synced **{len(synced)}** commands to this server!", ephemeral=True)
+        print(f"✅ Manual force sync: {len(synced)} commands synced to {interaction.guild.name}")
+    except Exception as e:
+        await interaction.followup.send(f"❌ Sync failed: {e}", ephemeral=True)
+        traceback.print_exc()
 # ====================== SETUP HOOK ======================
 async def setup_hook():
     print("🚀 Running setup_hook...")
@@ -794,20 +708,22 @@ async def on_message(message: discord.Message):
         uid = str(message.author.id)
         entries[uid] = entries.get(uid, 0) + 1
         save_data()
-    # Crystal earning
+    # Crystal earning - IMPROVED SCALING (base 10 + length scaling)
     user_id = str(message.author.id)
     now = datetime.datetime.now().timestamp()
     cooldown = guild_data.get("crystal_cooldown", 60)
-    if user_id in last_crystal_time and now - last_crystal_time[user_id] < cooldown:
-        pass
-    else:
+    if user_id not in last_crystal_time or now - last_crystal_time[user_id] >= cooldown:
         length = len(message.content)
-        crystals_gained = min(10, max(1, length // 20))  # diminishing returns
+        if length < 10:
+            crystals_gained = 5
+        else:
+            crystals_gained = 10 + (length // 15)
+        crystals_gained = min(crystals_gained, 40)
         guild_data.setdefault("crystals", {})[user_id] = guild_data["crystals"].get(user_id, 0) + crystals_gained
         last_crystal_time[user_id] = now
         save_data()
         print(f"💎 {message.author} earned {crystals_gained} crystals (message length: {length})")
-    # Regular ticket farming (unchanged)
+    # Regular ticket farming
     role_bonuses = guild_data.get("role_bonuses", {})
     role_chance_bonuses = guild_data.get("role_chance_bonuses", {})
     extra_tickets = 0
