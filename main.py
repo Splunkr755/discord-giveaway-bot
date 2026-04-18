@@ -27,7 +27,7 @@ data = {}
 invite_cache = {}
 last_crystal_time = {}
 
-print("=== JOE FULL CHEST VERSION - 2026-04-18 (REWARD MESSAGE NOW SHOWS TOTAL CRYSTALS) ===")
+print("=== JOE FULL CHEST VERSION - 2026-04-18 (SEPARATE CUSTOM PRIZE ANNOUNCE COMMAND) ===")
 
 def load_data():
     global data
@@ -254,6 +254,7 @@ class ChestView(discord.ui.View):
             ephemeral=True
         )
 
+        # Rare item announcement (still automatic)
         if won.get("chance", 0) <= 0.001 and guild_data.get("special_reward_channel_id"):
             ch = interaction.guild.get_channel(int(guild_data["special_reward_channel_id"]))
             if ch:
@@ -753,6 +754,37 @@ async def set_crystal_chance(interaction: discord.Interaction, chance: float):
     save_data()
     await interaction.response.send_message(f"✅ Crystal chance set to **{chance*100:.1f}%** per eligible message!", ephemeral=True)
 
+# ====================== NEW SEPARATE CUSTOM PRIZE COMMAND ======================
+@tree.command(name="announce_custom_prize", description="Announce that a user won a custom prize from the chest")
+@app_commands.describe(
+    winner="The user who won the custom prize",
+    item_name="Name of the chest item they won",
+    prize_text="The exact custom prize they received"
+)
+@app_commands.default_permissions(administrator=True)
+async def announce_custom_prize(interaction: discord.Interaction, winner: discord.Member, item_name: str, prize_text: str):
+    guild_data = get_guild_data(interaction.guild.id)
+    channel_id = guild_data.get("special_reward_channel_id")
+    if not channel_id:
+        await interaction.response.send_message("❌ No special reward channel has been set! Use `/set_special_reward_channel` first.", ephemeral=True)
+        return
+
+    channel = interaction.guild.get_channel(int(channel_id))
+    if not channel:
+        await interaction.response.send_message("❌ The special reward channel could not be found!", ephemeral=True)
+        return
+
+    embed = discord.Embed(
+        title="🎉 CUSTOM PRIZE WON!",
+        description=f"{winner.mention} just won **{item_name}** from the chest!",
+        color=0xff00ff
+    )
+    embed.add_field(name="Prize", value=prize_text, inline=False)
+    embed.set_footer(text=f"Announced by {interaction.user.name}")
+
+    await channel.send(embed=embed)
+    await interaction.response.send_message(f"✅ Custom prize announcement sent to the special reward channel!", ephemeral=True)
+
 # ====================== BLACKLIST, SHOP, GIVEAWAY, CHEST COMMANDS ======================
 @tree.command(name="add_giveaway_blacklist_role", description="Blacklist a role from hosting giveaways")
 @app_commands.describe(role="Role that cannot host giveaways")
@@ -1151,8 +1183,8 @@ async def set_chest_open_cost(interaction: discord.Interaction, amount: int):
     await interaction.response.send_message(f"✅ Opening the chest now costs **{amount}** crystals!", ephemeral=True)
     await refresh_chest_embed(interaction.guild)
 
-@tree.command(name="set_special_reward_channel", description="Set the channel for rare chest win announcements")
-@app_commands.describe(channel="Channel for rare announcements")
+@tree.command(name="set_special_reward_channel", description="Set the channel for rare chest win announcements AND custom prize announcements")
+@app_commands.describe(channel="Channel for announcements")
 @app_commands.default_permissions(administrator=True)
 async def set_special_reward_channel(interaction: discord.Interaction, channel: discord.TextChannel):
     guild_data = get_guild_data(interaction.guild.id)
@@ -1267,7 +1299,7 @@ async def on_message(message: discord.Message):
             if rid in role_bonuses:
                 extra_tickets += role_bonuses[rid]
             if rid in role_chance_bonuses:
-                extra_chance = role_chance_bonuses[rid]  # fixed
+                extra_chance = role_chance_bonuses[rid]
         base_chance = guild_data.get("ticket_chance", 0.25)
         total_chance = base_chance + sum(role_chance_bonuses.values())
         chance = total_chance
@@ -1301,14 +1333,13 @@ async def on_message(message: discord.Message):
 
     # COMBINED ANNOUNCEMENT (only when tickets are won)
     if tickets_won > 0:
-        save_data()  # save tickets
+        save_data()
         ticket_channel_id = guild_data.get("ticket_channel")
         announcement_channel = message.channel
         if ticket_channel_id:
             ch = message.guild.get_channel(int(ticket_channel_id))
             if ch:
                 announcement_channel = ch
-        # Get current crystals total
         current_crystals = guild_data["crystals"].get(str(message.author.id), 0)
         try:
             await announcement_channel.send(
