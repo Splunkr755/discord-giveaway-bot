@@ -27,7 +27,7 @@ data = {}
 invite_cache = {}
 last_crystal_time = {}
 
-print("=== JOE FULL CHEST VERSION - 2026-04-18 (EXCLUDE COMMANDS RESTORED) ===")
+print("=== JOE FULL CHEST VERSION - 2026-04-18 (FORUM CHANNEL EXCLUDE SUPPORT) ===")
 
 def load_data():
     global data
@@ -587,11 +587,11 @@ async def remove_tickets(interaction: discord.Interaction, member: discord.Membe
     save_data()
     await interaction.response.send_message(f"✅ Removed **{amount}** tickets from {member.mention}. They now have **{tickets_dict[uid]}** tickets.", ephemeral=True)
 
-# ====================== EXCLUDED CHANNEL COMMANDS (RESTORED) ======================
-@tree.command(name="add_excluded_channel", description="Add a channel to ticket exclusion list")
-@app_commands.describe(channel="Channel that should not give tickets")
+# ====================== EXCLUDED CHANNEL COMMANDS (NOW SUPPORT FORUM CHANNELS) ======================
+@tree.command(name="add_excluded_channel", description="Add a channel to ticket exclusion list (supports text + forum)")
+@app_commands.describe(channel="Channel to exclude from ticket gains (text or forum)")
 @app_commands.default_permissions(administrator=True)
-async def add_excluded_channel(interaction: discord.Interaction, channel: discord.TextChannel):
+async def add_excluded_channel(interaction: discord.Interaction, channel: discord.abc.GuildChannel):
     guild_data = get_guild_data(interaction.guild.id)
     cid = str(channel.id)
     if cid in guild_data["excluded_channels"]:
@@ -604,7 +604,7 @@ async def add_excluded_channel(interaction: discord.Interaction, channel: discor
 @tree.command(name="remove_excluded_channel", description="Remove a channel from ticket exclusion list")
 @app_commands.describe(channel="Channel to remove from exclusion")
 @app_commands.default_permissions(administrator=True)
-async def remove_excluded_channel(interaction: discord.Interaction, channel: discord.TextChannel):
+async def remove_excluded_channel(interaction: discord.Interaction, channel: discord.abc.GuildChannel):
     guild_data = get_guild_data(interaction.guild.id)
     cid = str(channel.id)
     if cid not in guild_data["excluded_channels"]:
@@ -614,10 +614,10 @@ async def remove_excluded_channel(interaction: discord.Interaction, channel: dis
     save_data()
     await interaction.response.send_message(f"✅ {channel.mention} can now give tickets again.", ephemeral=True)
 
-@tree.command(name="add_crystal_excluded_channel", description="Add a channel to crystal exclusion list")
-@app_commands.describe(channel="Channel that should not give crystals")
+@tree.command(name="add_crystal_excluded_channel", description="Add a channel to crystal exclusion list (supports text + forum)")
+@app_commands.describe(channel="Channel to exclude from crystal gains (text or forum)")
 @app_commands.default_permissions(administrator=True)
-async def add_crystal_excluded_channel(interaction: discord.Interaction, channel: discord.TextChannel):
+async def add_crystal_excluded_channel(interaction: discord.Interaction, channel: discord.abc.GuildChannel):
     guild_data = get_guild_data(interaction.guild.id)
     cid = str(channel.id)
     if cid in guild_data["crystal_excluded_channels"]:
@@ -630,7 +630,7 @@ async def add_crystal_excluded_channel(interaction: discord.Interaction, channel
 @tree.command(name="remove_crystal_excluded_channel", description="Remove a channel from crystal exclusion list")
 @app_commands.describe(channel="Channel to remove from crystal exclusion")
 @app_commands.default_permissions(administrator=True)
-async def remove_crystal_excluded_channel(interaction: discord.Interaction, channel: discord.TextChannel):
+async def remove_crystal_excluded_channel(interaction: discord.Interaction, channel: discord.abc.GuildChannel):
     guild_data = get_guild_data(interaction.guild.id)
     cid = str(channel.id)
     if cid not in guild_data["crystal_excluded_channels"]:
@@ -640,10 +640,10 @@ async def remove_crystal_excluded_channel(interaction: discord.Interaction, chan
     save_data()
     await interaction.response.send_message(f"✅ {channel.mention} can now give crystals again.", ephemeral=True)
 
-@tree.command(name="add_daily_excluded_channel", description="Add a channel to daily reward exclusion list")
-@app_commands.describe(channel="Channel that should not count for daily rewards")
+@tree.command(name="add_daily_excluded_channel", description="Add a channel to daily reward exclusion list (supports text + forum)")
+@app_commands.describe(channel="Channel to exclude from daily rewards (text or forum)")
 @app_commands.default_permissions(administrator=True)
-async def add_daily_excluded_channel(interaction: discord.Interaction, channel: discord.TextChannel):
+async def add_daily_excluded_channel(interaction: discord.Interaction, channel: discord.abc.GuildChannel):
     guild_data = get_guild_data(interaction.guild.id)
     cid = str(channel.id)
     if cid in guild_data["daily_excluded_channels"]:
@@ -656,7 +656,7 @@ async def add_daily_excluded_channel(interaction: discord.Interaction, channel: 
 @tree.command(name="remove_daily_excluded_channel", description="Remove a channel from daily reward exclusion list")
 @app_commands.describe(channel="Channel to remove from daily exclusion")
 @app_commands.default_permissions(administrator=True)
-async def remove_daily_excluded_channel(interaction: discord.Interaction, channel: discord.TextChannel):
+async def remove_daily_excluded_channel(interaction: discord.Interaction, channel: discord.abc.GuildChannel):
     guild_data = get_guild_data(interaction.guild.id)
     cid = str(channel.id)
     if cid not in guild_data["daily_excluded_channels"]:
@@ -960,7 +960,7 @@ async def setup_chest(interaction: discord.Interaction):
     save_data()
     await interaction.response.send_message(f"✅ Chest embed posted in {channel.mention} and will now auto-update when items change!", ephemeral=True)
 
-# ====================== REST OF THE SETUP & EVENTS ======================
+# ====================== ROLE / CHEST / DAILY / SETUP COMMANDS ======================
 @tree.command(name="set_giveaway_host_role", description="Set the role required to host giveaways (Admins only)")
 @app_commands.describe(role="Role that can host giveaways (leave empty to remove restriction)")
 @app_commands.default_permissions(administrator=True)
@@ -1112,7 +1112,7 @@ async def set_special_reward_channel(interaction: discord.Interaction, channel: 
     save_data()
     await interaction.response.send_message(f"✅ Special reward announcement channel set to {channel.mention}!", ephemeral=True)
 
-# ====================== NUKE COMMANDS (for safety) ======================
+# ====================== NUKE COMMANDS ======================
 @tree.command(name="global_nuke", description="Clears ALL global commands")
 @app_commands.default_permissions(administrator=True)
 async def global_nuke(interaction: discord.Interaction):
@@ -1123,7 +1123,7 @@ async def global_nuke(interaction: discord.Interaction):
     except Exception as e:
         await interaction.followup.send(f"❌ Failed: {e}", ephemeral=True)
 
-@tree.command(name="nuke_all_commands", description="ULTIMATE NUKE - clears everything")
+@tree.command(name="nuke_all_commands", description="ULTIMATE NUKE - clears global + guild commands")
 @app_commands.default_permissions(administrator=True)
 async def nuke_all_commands(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
