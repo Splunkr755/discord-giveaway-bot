@@ -651,8 +651,11 @@ async def on_ready():
     
     for guild in client.guilds:
         try:
-            tree.clear_commands(guild=guild)          # clear old commands
-            await tree.copy_global_to(guild=guild)   # force copy new commands
+            # These two lines are NOT async - no 'await'
+            tree.clear_commands(guild=guild)
+            tree.copy_global_to(guild=guild)
+            
+            # Only this one needs await
             synced = await tree.sync(guild=guild)
             print(f'✅ Synced {len(synced)} commands to guild: {guild.name} ({guild.id})')
         except Exception as e:
