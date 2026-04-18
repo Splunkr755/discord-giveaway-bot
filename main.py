@@ -27,7 +27,7 @@ data = {}
 invite_cache = {}
 last_crystal_time = {}
 
-print("=== JOE FULL CHEST VERSION - 2026-04-18 (FORUM CHANNEL EXCLUDE SUPPORT) ===")
+print("=== JOE FULL CHEST VERSION - 2026-04-18 (ROLE CHANCE BONUS COMMANDS ADDED) ===")
 
 def load_data():
     global data
@@ -587,7 +587,7 @@ async def remove_tickets(interaction: discord.Interaction, member: discord.Membe
     save_data()
     await interaction.response.send_message(f"✅ Removed **{amount}** tickets from {member.mention}. They now have **{tickets_dict[uid]}** tickets.", ephemeral=True)
 
-# ====================== EXCLUDED CHANNEL COMMANDS (NOW SUPPORT FORUM CHANNELS) ======================
+# ====================== EXCLUDED CHANNEL COMMANDS (FORUM SUPPORT) ======================
 @tree.command(name="add_excluded_channel", description="Add a channel to ticket exclusion list (supports text + forum)")
 @app_commands.describe(channel="Channel to exclude from ticket gains (text or forum)")
 @app_commands.default_permissions(administrator=True)
@@ -700,6 +700,45 @@ async def list_role_bonuses(interaction: discord.Interaction):
         role = interaction.guild.get_role(int(rid))
         name = role.name if role else f"Unknown ({rid})"
         embed.add_field(name=name, value=f"+{amt} tickets", inline=False)
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+# ====================== NEW ROLE CHANCE BONUS COMMANDS ======================
+@tree.command(name="add_role_chance_bonus", description="Add bonus chance of winning tickets for a role")
+@app_commands.describe(role="Role to give bonus chance", amount="Extra chance (e.g. 0.25 for +25%)")
+@app_commands.default_permissions(administrator=True)
+async def add_role_chance_bonus(interaction: discord.Interaction, role: discord.Role, amount: float):
+    if amount <= 0:
+        await interaction.response.send_message("❌ Chance bonus must be greater than 0!", ephemeral=True)
+        return
+    guild_data = get_guild_data(interaction.guild.id)
+    guild_data["role_chance_bonuses"][str(role.id)] = amount
+    save_data()
+    await interaction.response.send_message(f"✅ **{role.name}** now gives **+{amount}** extra ticket chance on every message!", ephemeral=True)
+
+@tree.command(name="remove_role_chance_bonus", description="Remove bonus chance from a role")
+@app_commands.describe(role="Role to remove chance bonus from")
+@app_commands.default_permissions(administrator=True)
+async def remove_role_chance_bonus(interaction: discord.Interaction, role: discord.Role):
+    guild_data = get_guild_data(interaction.guild.id)
+    if str(role.id) in guild_data["role_chance_bonuses"]:
+        del guild_data["role_chance_bonuses"][str(role.id)]
+        save_data()
+        await interaction.response.send_message(f"✅ Removed chance bonus from **{role.name}**", ephemeral=True)
+    else:
+        await interaction.response.send_message("❌ That role has no chance bonus.", ephemeral=True)
+
+@tree.command(name="list_role_chance_bonuses", description="List all role chance bonuses")
+@app_commands.default_permissions(administrator=True)
+async def list_role_chance_bonuses(interaction: discord.Interaction):
+    guild_data = get_guild_data(interaction.guild.id)
+    if not guild_data["role_chance_bonuses"]:
+        await interaction.response.send_message("No role chance bonuses set.", ephemeral=True)
+        return
+    embed = discord.Embed(title="Role Chance Bonuses", color=0x00ff88)
+    for rid, amt in guild_data["role_chance_bonuses"].items():
+        role = interaction.guild.get_role(int(rid))
+        name = role.name if role else f"Unknown ({rid})"
+        embed.add_field(name=name, value=f"+{amt} ticket chance", inline=False)
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 # ====================== BLACKLIST COMMANDS ======================
