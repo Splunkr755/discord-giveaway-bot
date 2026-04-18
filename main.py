@@ -27,7 +27,7 @@ data = {}
 invite_cache = {}
 last_crystal_time = {}
 
-print("=== JOE FULL CHEST VERSION - 2026-04-18 (COMPLETE - NO DUPLICATES) ===")
+print("=== JOE FULL CHEST VERSION - 2026-04-18 (DEFINITIVE FULL FIX - NO DUPLICATES) ===")
 
 def load_data():
     global data
@@ -321,7 +321,6 @@ async def refresh_giveaway_embed(message: discord.Message, giveaway: dict):
         embed.set_image(url=giveaway["image_url"])
     await message.edit(embed=embed)
 
-# ====================== CHEST EMBED AUTO-UPDATE ======================
 async def refresh_chest_embed(guild: discord.Guild):
     guild_data = get_guild_data(guild.id)
     if not guild_data.get("chest_channel_id") or not guild_data.get("chest_message_id"):
@@ -364,7 +363,6 @@ async def refresh_chest_embed(guild: discord.Guild):
     view = ChestView()
     await message.edit(embed=embed, view=view)
 
-# ====================== DAILY REWARDS ANNOUNCEMENT EMBED ======================
 async def refresh_daily_reward_embed(guild: discord.Guild):
     guild_data = get_guild_data(guild.id)
     daily = guild_data.get("daily_chat_reward", {})
@@ -550,189 +548,125 @@ async def finish_giveaway(guild: discord.Guild, message_id: str, refund: bool = 
     del guild_data["giveaways"][message_id]
     save_data()
 
-# ====================== EXCLUSION COMMANDS ======================
-@tree.command(name="add_excluded_channel", description="Exclude a channel or forum from ticket farming")
-@app_commands.describe(channel="Channel or forum to exclude from ticket farming")
+# ====================== ROLE BONUS COMMANDS ======================
+@tree.command(name="add_role_bonus", description="Add ticket bonus for a role")
+@app_commands.describe(role="Role to give bonus tickets", amount="Extra tickets")
 @app_commands.default_permissions(administrator=True)
-async def add_excluded_channel(interaction: discord.Interaction, channel: GuildChannel):
+async def add_role_bonus(interaction: discord.Interaction, role: discord.Role, amount: int):
     guild_data = get_guild_data(interaction.guild.id)
-    cid = str(channel.id)
-    if cid in guild_data["excluded_channels"]:
-        await interaction.response.send_message(f"❌ {channel.mention} is already excluded from ticket farming.", ephemeral=True)
-        return
-    guild_data["excluded_channels"].append(cid)
+    guild_data["role_bonuses"][str(role.id)] = amount
     save_data()
-    await interaction.response.send_message(f"✅ {channel.mention} is now **excluded from ticket farming**.\n(Threads inside forums are also excluded)", ephemeral=True)
+    await interaction.response.send_message(f"✅ **{role.name}** now gives **+{amount}** tickets on message!", ephemeral=True)
 
-@tree.command(name="remove_excluded_channel", description="Remove a channel or forum from ticket farming exclusion")
-@app_commands.describe(channel="Channel or forum to remove from exclusion")
+@tree.command(name="remove_role_bonus", description="Remove ticket bonus from a role")
+@app_commands.describe(role="Role to remove bonus from")
 @app_commands.default_permissions(administrator=True)
-async def remove_excluded_channel(interaction: discord.Interaction, channel: GuildChannel):
+async def remove_role_bonus(interaction: discord.Interaction, role: discord.Role):
     guild_data = get_guild_data(interaction.guild.id)
-    cid = str(channel.id)
-    if cid in guild_data["excluded_channels"]:
-        guild_data["excluded_channels"].remove(cid)
+    if str(role.id) in guild_data["role_bonuses"]:
+        del guild_data["role_bonuses"][str(role.id)]
         save_data()
-        await interaction.response.send_message(f"✅ {channel.mention} is no longer excluded from ticket farming.", ephemeral=True)
+        await interaction.response.send_message(f"✅ Removed bonus from **{role.name}**", ephemeral=True)
     else:
-        await interaction.response.send_message(f"❌ {channel.mention} was not in the ticket farming exclusion list.", ephemeral=True)
+        await interaction.response.send_message("❌ That role has no bonus.", ephemeral=True)
 
-@tree.command(name="add_crystal_excluded_channel", description="Exclude a channel or forum from crystal earning")
-@app_commands.describe(channel="Channel or forum to exclude from crystals")
+@tree.command(name="list_role_bonuses", description="List all role bonuses")
 @app_commands.default_permissions(administrator=True)
-async def add_crystal_excluded_channel(interaction: discord.Interaction, channel: GuildChannel):
+async def list_role_bonuses(interaction: discord.Interaction):
     guild_data = get_guild_data(interaction.guild.id)
-    cid = str(channel.id)
-    if cid in guild_data["crystal_excluded_channels"]:
-        await interaction.response.send_message(f"❌ {channel.mention} is already excluded from crystal earning.", ephemeral=True)
+    if not guild_data["role_bonuses"]:
+        await interaction.response.send_message("No role bonuses set.", ephemeral=True)
         return
-    guild_data["crystal_excluded_channels"].append(cid)
-    save_data()
-    await interaction.response.send_message(f"✅ {channel.mention} is now **excluded from crystal earning**.\n(Threads inside forums are also excluded)", ephemeral=True)
-
-@tree.command(name="remove_crystal_excluded_channel", description="Remove a channel from crystal exclusion")
-@app_commands.describe(channel="Channel or forum to remove from exclusion")
-@app_commands.default_permissions(administrator=True)
-async def remove_crystal_excluded_channel(interaction: discord.Interaction, channel: GuildChannel):
-    guild_data = get_guild_data(interaction.guild.id)
-    cid = str(channel.id)
-    if cid in guild_data["crystal_excluded_channels"]:
-        guild_data["crystal_excluded_channels"].remove(cid)
-        save_data()
-        await interaction.response.send_message(f"✅ {channel.mention} is no longer excluded from crystal earning.", ephemeral=True)
-    else:
-        await interaction.response.send_message(f"❌ {channel.mention} was not in the crystal exclusion list.", ephemeral=True)
-
-@tree.command(name="add_daily_excluded_channel", description="Exclude a channel or forum from daily chat rewards")
-@app_commands.describe(channel="Channel or forum to exclude from daily rewards")
-@app_commands.default_permissions(administrator=True)
-async def add_daily_excluded_channel(interaction: discord.Interaction, channel: GuildChannel):
-    guild_data = get_guild_data(interaction.guild.id)
-    cid = str(channel.id)
-    if cid in guild_data["daily_excluded_channels"]:
-        await interaction.response.send_message(f"❌ {channel.mention} is already excluded from daily rewards.", ephemeral=True)
-        return
-    guild_data["daily_excluded_channels"].append(cid)
-    save_data()
-    await interaction.response.send_message(f"✅ {channel.mention} is now **excluded from daily chat rewards**.\n(Threads inside forums are also excluded)", ephemeral=True)
-
-@tree.command(name="remove_daily_excluded_channel", description="Remove a channel or forum from daily exclusion")
-@app_commands.describe(channel="Channel or forum to remove from exclusion")
-@app_commands.default_permissions(administrator=True)
-async def remove_daily_excluded_channel(interaction: discord.Interaction, channel: GuildChannel):
-    guild_data = get_guild_data(interaction.guild.id)
-    cid = str(channel.id)
-    if cid in guild_data["daily_excluded_channels"]:
-        guild_data["daily_excluded_channels"].remove(cid)
-        save_data()
-        await interaction.response.send_message(f"✅ {channel.mention} is no longer excluded from daily rewards.", ephemeral=True)
-    else:
-        await interaction.response.send_message(f"❌ {channel.mention} was not in the daily exclusion list.", ephemeral=True)
-
-@tree.command(name="list_excluded_channels", description="List all excluded channels (tickets + crystals + daily)")
-@app_commands.default_permissions(administrator=True)
-async def list_excluded_channels(interaction: discord.Interaction):
-    guild_data = get_guild_data(interaction.guild.id)
-    ticket_ex = guild_data.get("excluded_channels", [])
-    crystal_ex = guild_data.get("crystal_excluded_channels", [])
-    daily_ex = guild_data.get("daily_excluded_channels", [])
-
-    embed = discord.Embed(title="🚫 Excluded Channels", color=0xff0000)
-    embed.add_field(name="🎟️ Ticket Farming", value="\n".join([f"<#{cid}>" for cid in ticket_ex]) or "None", inline=False)
-    embed.add_field(name="💎 Crystal Earning", value="\n".join([f"<#{cid}>" for cid in crystal_ex]) or "None", inline=False)
-    embed.add_field(name="🏆 Daily Rewards", value="\n".join([f"<#{cid}>" for cid in daily_ex]) or "None", inline=False)
+    embed = discord.Embed(title="Role Bonuses", color=0x00ff88)
+    for rid, amt in guild_data["role_bonuses"].items():
+        role = interaction.guild.get_role(int(rid))
+        name = role.name if role else f"Unknown ({rid})"
+        embed.add_field(name=name, value=f"+{amt} tickets", inline=False)
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
-# ====================== COMMANDS ======================
-@tree.command(name="balance", description="Check your tickets and crystals")
-async def balance(interaction: discord.Interaction):
-    guild_data = get_guild_data(interaction.guild.id)
-    user_id = str(interaction.user.id)
-    tickets = guild_data.get("tickets", {}).get(user_id, 0)
-    crystals = guild_data.get("crystals", {}).get(user_id, 0)
-    embed = discord.Embed(title=f"💰 {interaction.user.name}'s Balance", color=0x00ff88)
-    embed.add_field(name="🎟️ Tickets", value=f"**{tickets}**", inline=True)
-    embed.add_field(name="💎 Crystals", value=f"**{crystals}**", inline=True)
-    await interaction.response.send_message(embed=embed, ephemeral=True)
-
-@tree.command(name="give_tickets", description="Give tickets to a user (Mod only)")
-@app_commands.describe(member="The member to give tickets to", amount="Number of tickets")
-async def give_tickets(interaction: discord.Interaction, member: discord.Member, amount: int):
-    if amount < 1:
-        await interaction.response.send_message("❌ Amount must be at least 1!", ephemeral=True)
-        return
-    guild_data = get_guild_data(interaction.guild.id)
-    mod_role_id = guild_data.get("ticket_mod_role")
-    is_mod = mod_role_id is None or any(str(r.id) == mod_role_id for r in interaction.user.roles)
-    if not is_mod and not interaction.user.guild_permissions.administrator:
-        await interaction.response.send_message("❌ You don't have permission to give tickets!", ephemeral=True)
-        return
-    tickets_dict = guild_data.setdefault("tickets", {})
-    uid = str(member.id)
-    tickets_dict[uid] = tickets_dict.get(uid, 0) + amount
-    save_data()
-    await interaction.response.send_message(f"✅ Gave **{amount}** tickets to {member.mention}!", ephemeral=False)
-
-@tree.command(name="remove_tickets", description="Remove tickets from a user (Mod only)")
-@app_commands.describe(member="The member to remove tickets from", amount="Number of tickets")
-async def remove_tickets(interaction: discord.Interaction, member: discord.Member, amount: int):
-    if amount < 1:
-        await interaction.response.send_message("❌ Amount must be at least 1!", ephemeral=True)
-        return
-    guild_data = get_guild_data(interaction.guild.id)
-    mod_role_id = guild_data.get("ticket_mod_role")
-    is_mod = mod_role_id is None or any(str(r.id) == mod_role_id for r in interaction.user.roles)
-    if not is_mod and not interaction.user.guild_permissions.administrator:
-        await interaction.response.send_message("❌ You don't have permission to remove tickets!", ephemeral=True)
-        return
-    tickets_dict = guild_data.setdefault("tickets", {})
-    uid = str(member.id)
-    current = tickets_dict.get(uid, 0)
-    new_amount = max(0, current - amount)
-    tickets_dict[uid] = new_amount
-    save_data()
-    await interaction.response.send_message(f"✅ Removed **{amount}** tickets from {member.mention}. They now have **{new_amount}**.", ephemeral=False)
-
-@tree.command(name="shop", description="Browse the server shop")
-async def shop(interaction: discord.Interaction):
-    guild_data = get_guild_data(interaction.guild.id)
-    view = ShopView(guild_data)
-    await interaction.response.send_message(embed=view.get_embed(), view=view, ephemeral=True)
-
-@tree.command(name="list_chest_items", description="List all items in the chest loot table")
+# ====================== BLACKLIST COMMANDS ======================
+@tree.command(name="add_giveaway_blacklist_role", description="Blacklist a role from hosting giveaways")
+@app_commands.describe(role="Role that cannot host giveaways")
 @app_commands.default_permissions(administrator=True)
-async def list_chest_items(interaction: discord.Interaction):
+async def add_giveaway_blacklist_role(interaction: discord.Interaction, role: discord.Role):
     guild_data = get_guild_data(interaction.guild.id)
-    items = guild_data.get("chest_items", {})
-    if not items:
-        await interaction.response.send_message("No items in the chest yet.", ephemeral=True)
+    cid = str(role.id)
+    if cid in guild_data["giveaway_blacklist_roles"]:
+        await interaction.response.send_message(f"❌ **{role.name}** is already blacklisted.", ephemeral=True)
         return
-    embed = discord.Embed(title="🎁 Chest Loot Table", color=0xff00ff)
-    for name, data in items.items():
-        prizes = []
-        if data.get("crystal_prize", 0) > 0:
-            prizes.append(f"{data['crystal_prize']} crystals")
-        if data.get("ticket_prize", 0) > 0:
-            prizes.append(f"{data['ticket_prize']} tickets")
-        if data.get("custom_prize"):
-            prizes.append(data["custom_prize"])
-        chance = data.get("chance", 0) * 100
-        embed.add_field(name=name, value=f"Rewards: {', '.join(prizes) or 'Nothing'}\nChance: {chance:.2f}%", inline=False)
-    await interaction.response.send_message(embed=embed, ephemeral=True)
+    guild_data["giveaway_blacklist_roles"].append(cid)
+    save_data()
+    await interaction.response.send_message(f"✅ **{role.name}** can no longer host giveaways.", ephemeral=True)
 
-@tree.command(name="remove_chest_item", description="Remove an item from the chest loot table")
-@app_commands.describe(name="Name of the item to remove")
+@tree.command(name="remove_giveaway_blacklist_role", description="Remove blacklist from a role")
+@app_commands.describe(role="Role to un-blacklist")
 @app_commands.default_permissions(administrator=True)
-async def remove_chest_item(interaction: discord.Interaction, name: str):
+async def remove_giveaway_blacklist_role(interaction: discord.Interaction, role: discord.Role):
     guild_data = get_guild_data(interaction.guild.id)
-    if name in guild_data["chest_items"]:
-        del guild_data["chest_items"][name]
+    cid = str(role.id)
+    if cid in guild_data["giveaway_blacklist_roles"]:
+        guild_data["giveaway_blacklist_roles"].remove(cid)
         save_data()
-        await interaction.response.send_message(f"✅ Removed **{name}** from the chest loot table.", ephemeral=True)
-        await refresh_chest_embed(interaction.guild)
+        await interaction.response.send_message(f"✅ **{role.name}** can now host giveaways again.", ephemeral=True)
+    else:
+        await interaction.response.send_message("❌ That role was not blacklisted.", ephemeral=True)
+
+# ====================== SHOP COMMANDS ======================
+@tree.command(name="add_shop_item", description="Add an item to the shop")
+@app_commands.describe(name="Item name", price="Ticket price", description="Item description", stock="Server-wide stock (leave blank for unlimited)")
+@app_commands.default_permissions(administrator=True)
+async def add_shop_item(interaction: discord.Interaction, name: str, price: int, description: str, stock: int = None):
+    guild_data = get_guild_data(interaction.guild.id)
+    item_id = name.lower().replace(" ", "_")
+    guild_data["shop_items"][item_id] = {
+        "name": name,
+        "price": price,
+        "description": description,
+        "server_stock": stock
+    }
+    save_data()
+    await interaction.response.send_message(f"✅ Added **{name}** to the shop for **{price}** tickets!", ephemeral=True)
+
+@tree.command(name="remove_shop_item", description="Remove an item from the shop")
+@app_commands.describe(name="Item name")
+@app_commands.default_permissions(administrator=True)
+async def remove_shop_item(interaction: discord.Interaction, name: str):
+    guild_data = get_guild_data(interaction.guild.id)
+    item_id = name.lower().replace(" ", "_")
+    if item_id in guild_data["shop_items"]:
+        del guild_data["shop_items"][item_id]
+        save_data()
+        await interaction.response.send_message(f"✅ Removed **{name}** from the shop.", ephemeral=True)
     else:
         await interaction.response.send_message("❌ Item not found.", ephemeral=True)
 
+@tree.command(name="buy", description="Buy an item from the shop")
+@app_commands.describe(item="Item name")
+async def buy(interaction: discord.Interaction, item: str):
+    guild_data = get_guild_data(interaction.guild.id)
+    item_id = item.lower().replace(" ", "_")
+    if item_id not in guild_data["shop_items"]:
+        await interaction.response.send_message("❌ That item doesn't exist!", ephemeral=True)
+        return
+    shop_item = guild_data["shop_items"][item_id]
+    price = shop_item["price"]
+    user_tickets = guild_data.get("tickets", {}).get(str(interaction.user.id), 0)
+    if user_tickets < price:
+        await interaction.response.send_message(f"❌ You need **{price}** tickets!", ephemeral=True)
+        return
+    guild_data.setdefault("tickets", {})[str(interaction.user.id)] = user_tickets - price
+    if shop_item.get("server_stock") is not None:
+        shop_item["server_stock"] -= 1
+    save_data()
+    await interaction.response.send_message(f"✅ You bought **{shop_item['name']}**!", ephemeral=False)
+
+@tree.command(name="my_tickets", description="Quickly check your tickets")
+async def my_tickets(interaction: discord.Interaction):
+    guild_data = get_guild_data(interaction.guild.id)
+    tickets = guild_data.get("tickets", {}).get(str(interaction.user.id), 0)
+    await interaction.response.send_message(f"🎟️ You have **{tickets}** tickets!", ephemeral=True)
+
+# ====================== FIXED CREATE GIVEAWAY (single version) ======================
 @tree.command(name="create_giveaway", description="Create a new raffle/giveaway (costs tickets to enter)")
 @app_commands.describe(
     prize="What the winner gets",
@@ -751,7 +685,7 @@ async def create_giveaway(interaction: discord.Interaction, prize: str, duration
     host_role_id = guild_data.get("giveaway_host_role")
     blacklist = guild_data.get("giveaway_blacklist_roles", [])
     has_host_role = host_role_id is None or any(str(role.id) == str(host_role_id) for role in interaction.user.roles)
-    is_blacklisted = any(str(role.id) in blacklist for role in interaction.user.roles)
+    is_blacklisted = any(str(role.id) in blacklist for role in interaction.user.roles) and not has_host_role
 
     print(f"[DEBUG] Host role check for {interaction.user} | Host role ID: {host_role_id} | Has role: {has_host_role} | Blacklisted: {is_blacklisted}")
 
@@ -796,6 +730,7 @@ async def create_giveaway(interaction: discord.Interaction, prize: str, duration
     await refresh_giveaway_embed(msg, guild_data["giveaways"][str(msg.id)])
     await interaction.followup.send(f"✅ Giveaway created in {send_channel.mention}!", ephemeral=True)
 
+# ====================== FREE GIVEAWAY ======================
 @tree.command(name="create_free_giveaway", description="Create a free button-entry giveaway (winners get tickets)")
 @app_commands.describe(prize_tickets="How many tickets each winner gets", duration="How long (e.g. 30s, 5m, 1h, 2d)", winners="Number of winners", image="Optional image for the embed", ping_role="Role to ping when the giveaway starts (leave empty for no ping)", channel="Channel to post the giveaway in (leave empty for current channel)")
 @app_commands.default_permissions(administrator=True)
@@ -804,7 +739,7 @@ async def create_free_giveaway(interaction: discord.Interaction, prize_tickets: 
     host_role_id = guild_data.get("giveaway_host_role")
     blacklist = guild_data.get("giveaway_blacklist_roles", [])
     has_host_role = host_role_id is None or any(str(role.id) == str(host_role_id) for role in interaction.user.roles)
-    is_blacklisted = any(str(role.id) in blacklist for role in interaction.user.roles)
+    is_blacklisted = any(str(role.id) in blacklist for role in interaction.user.roles) and not has_host_role
     if not has_host_role or is_blacklisted:
         await interaction.response.send_message("❌ You do not have permission to host giveaways!", ephemeral=True)
         return
@@ -823,6 +758,7 @@ async def create_free_giveaway(interaction: discord.Interaction, prize_tickets: 
     await refresh_giveaway_embed(msg, guild_data["giveaways"][str(msg.id)])
     await interaction.followup.send(f"✅ Free giveaway created in {send_channel.mention}!", ephemeral=True)
 
+# ====================== ROLE / CHEST / DAILY / SETUP COMMANDS ======================
 @tree.command(name="set_giveaway_host_role", description="Set the role required to host giveaways (Admins only)")
 @app_commands.describe(role="Role that can host giveaways (leave empty to remove restriction)")
 @app_commands.default_permissions(administrator=True)
@@ -1074,7 +1010,7 @@ async def setup_hook():
     asyncio.create_task(giveaway_checker(client))
     asyncio.create_task(shop_checker(client))
     asyncio.create_task(daily_chat_checker(client))
-    print("✅ Giveaway + Shop + Daily Chat checker started!")
+    print("✅ All background tasks started!")
 
 client.setup_hook = setup_hook
 
@@ -1082,17 +1018,14 @@ client.setup_hook = setup_hook
 @client.event
 async def on_ready():
     print(f'✅ Logged in as {client.user}')
-    print(f"DEBUG: Tree has {len(list(tree.walk_commands()))} commands registered")
-   
     for guild in client.guilds:
         try:
             tree.clear_commands(guild=guild)
             tree.copy_global_to(guild=guild)
             synced = await tree.sync(guild=guild)
-            print(f'✅ Synced {len(synced)} commands to guild: {guild.name} ({guild.id})')
+            print(f'✅ Synced {len(synced)} commands to {guild.name}')
         except Exception as e:
             print(f'❌ Sync failed for {guild.name}: {e}')
-            traceback.print_exc()
 
 @client.event
 async def on_member_join(member):
@@ -1140,11 +1073,7 @@ async def on_message(message: discord.Message):
 
     guild_data = get_guild_data(message.guild.id)
 
-    # Ticket farming exclusion
-    if is_channel_excluded(message, guild_data.get("excluded_channels", [])):
-        pass
-    else:
-        # Ticket farming
+    if not is_channel_excluded(message, guild_data.get("excluded_channels", [])):
         role_bonuses = guild_data.get("role_bonuses", {})
         role_chance_bonuses = guild_data.get("role_chance_bonuses", {})
         extra_tickets = 0
@@ -1189,7 +1118,6 @@ async def on_message(message: discord.Message):
                 pass
             print(f"🎟️ TICKET AWARDED to {message.author} (+{extra_tickets} role bonus) → now has {new_total}")
 
-    # Crystal earning exclusion
     if not is_channel_excluded(message, guild_data.get("crystal_excluded_channels", [])):
         user_id = str(message.author.id)
         now = datetime.datetime.now().timestamp()
@@ -1203,7 +1131,6 @@ async def on_message(message: discord.Message):
             save_data()
             print(f"💎 {message.author} earned {crystals_gained} crystals (message length: {length})")
 
-    # Daily chat rewards - global
     if not is_channel_excluded(message, guild_data.get("daily_excluded_channels", [])):
         daily = guild_data.get("daily_chat_reward", {})
         if daily.get("announcement_channel_id"):
