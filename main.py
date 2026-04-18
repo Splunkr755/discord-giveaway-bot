@@ -638,18 +638,28 @@ async def buy(interaction: discord.Interaction, item: str):
     if current_tickets < shop_item["price"]:
         await interaction.response.send_message(f"❌ You only have **{current_tickets}** tickets. Need **{shop_item['price']}**!", ephemeral=True)
         return
+    # Purchase
     tickets_dict[user_id] = current_tickets - shop_item["price"]
     shop_item["purchases"][user_id] = bought + 1
     if shop_item.get("server_stock") is not None:
         shop_item["server_stock"] -= 1
     save_data()
+    # Role reward?
     role_id = shop_item.get("role_id")
     if role_id:
-        role = interaction.guild.get_role(int(role_id))
-        if role:
-            await interaction.user.add_roles(role)
-            await interaction.response.send_message(f"✅ **Purchase successful!** You received the **{role.name}** role!", ephemeral=False)
-            return
+        try:
+            role = interaction.guild.get_role(int(role_id))
+            if role:
+                await interaction.user.add_roles(role)
+                print(f"✅ ROLE ASSIGNED: Gave '{role.name}' to {interaction.user} (ID: {role_id})")
+                await interaction.response.send_message(f"✅ **Purchase successful!** You received the **{role.name}** role!", ephemeral=False)
+                return
+            else:
+                print(f"❌ ROLE NOT FOUND: Could not find role with ID {role_id}")
+        except Exception as e:
+            print(f"❌ ROLE ASSIGNMENT FAILED: {e}")
+            traceback.print_exc()
+    # If no role or role failed, show manual claim message
     await interaction.response.send_message(
         f"✅ **Purchase successful!** You bought **{item}** for `{shop_item['price']}` tickets.\n"
         f"Open a ticket to claim your prize (include a screenshot of this message).",
@@ -669,7 +679,6 @@ client.setup_hook = setup_hook
 @client.event
 async def on_ready():
     print(f'✅ Logged in as {client.user}')
-    # Guild-specific sync for EVERY server the bot is in (fixes duplicates)
     for guild in client.guilds:
         try:
             synced = await tree.sync(guild=guild)
