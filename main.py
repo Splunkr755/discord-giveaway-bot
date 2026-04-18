@@ -21,6 +21,7 @@ DATA_FILE = "/data/bot_data.json"
 data = {}
 invite_cache = {}
 last_crystal_time = {}
+print("=== JOE FULL CHEST VERSION - 2026-04-18 13:40 ===")
 def load_data():
     global data
     if os.path.exists(DATA_FILE):
