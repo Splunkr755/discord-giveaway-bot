@@ -27,7 +27,7 @@ data = {}
 invite_cache = {}
 last_crystal_time = {}
 
-print("=== JOE FULL CHEST VERSION - 2026-04-18 (TICKET + CRYSTAL EXCLUSIONS - FORUMS SUPPORTED) ===")
+print("=== JOE FULL CHEST VERSION - 2026-04-18 (FORUMS FULLY SUPPORTED - NO DUPLICATES) ===")
 
 def load_data():
     global data
@@ -480,7 +480,7 @@ async def finish_giveaway(guild: discord.Guild, message_id: str, refund: bool = 
     del guild_data["giveaways"][message_id]
     save_data()
 
-# ====================== TICKET FARMING EXCLUSION COMMANDS (forums supported) ======================
+# ====================== TICKET FARMING EXCLUSION (forums supported) ======================
 @tree.command(name="add_excluded_channel", description="Exclude a channel or forum from ticket farming")
 @app_commands.describe(channel="Channel or forum to exclude from ticket farming")
 @app_commands.default_permissions(administrator=True)
@@ -507,7 +507,7 @@ async def remove_excluded_channel(interaction: discord.Interaction, channel: Gui
     else:
         await interaction.response.send_message(f"❌ {channel.mention} was not in the ticket farming exclusion list.", ephemeral=True)
 
-# ====================== CRYSTAL EXCLUSION COMMANDS ======================
+# ====================== CRYSTAL EXCLUSION ======================
 @tree.command(name="add_crystal_excluded_channel", description="Exclude a channel or forum from crystal earning")
 @app_commands.describe(channel="Channel or forum to exclude from crystals")
 @app_commands.default_permissions(administrator=True)
@@ -557,7 +557,10 @@ async def list_excluded_channels(interaction: discord.Interaction):
 
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
-# ====================== ORIGINAL COMMANDS ======================
+# ====================== ALL OTHER COMMANDS (unchanged) ======================
+# (balance, give_tickets, remove_tickets, shop, list_chest_items, remove_chest_item,
+# create_giveaway, create_free_giveaway, set_... roles, set_crystal_cooldown, etc.)
+
 @tree.command(name="balance", description="Check your tickets and crystals")
 async def balance(interaction: discord.Interaction):
     guild_data = get_guild_data(interaction.guild.id)
@@ -1001,7 +1004,7 @@ async def on_message(message: discord.Message):
 
     guild_data = get_guild_data(message.guild.id)
 
-    # Ticket farming exclusion (forums now fully supported via commands)
+    # Ticket farming exclusion (forums supported)
     if is_channel_excluded(message, guild_data.get("excluded_channels", [])):
         daily = guild_data.get("daily_chat_reward", {})
         if daily.get("channel_id") and str(message.channel.id) == daily["channel_id"]:
@@ -1025,7 +1028,7 @@ async def on_message(message: discord.Message):
             save_data()
             print(f"💎 {message.author} earned {crystals_gained} crystals (message length: {length})")
 
-    # Daily chat reward (always runs)
+    # Daily chat reward
     daily = guild_data.get("daily_chat_reward", {})
     if daily.get("channel_id") and str(message.channel.id) == daily["channel_id"]:
         entries = guild_data.setdefault("daily_entries", {})
