@@ -1,6 +1,6 @@
 import discord
 from discord import app_commands
-from discord.abc import GuildChannel  # ← added for clean channel type
+from discord.abc import GuildChannel
 import random
 import json
 import os
@@ -27,7 +27,7 @@ data = {}
 invite_cache = {}
 last_crystal_time = {}
 
-print("=== JOE FULL CHEST VERSION - 2026-04-18 (CRYSTAL EXCLUSIONS + FORUM SUPPORT - CLEANED) ===")
+print("=== JOE FULL CHEST VERSION - 2026-04-18 (TICKET + CRYSTAL EXCLUSIONS - FORUMS SUPPORTED) ===")
 
 def load_data():
     global data
@@ -369,7 +369,6 @@ def is_channel_excluded(message, excluded_list):
     cid = str(message.channel.id)
     if cid in excluded_list:
         return True
-    # Handle threads inside forums
     if hasattr(message.channel, "parent") and message.channel.parent:
         parent_id = str(message.channel.parent.id)
         if parent_id in excluded_list:
@@ -481,8 +480,35 @@ async def finish_giveaway(guild: discord.Guild, message_id: str, refund: bool = 
     del guild_data["giveaways"][message_id]
     save_data()
 
-# ====================== EXCLUSION COMMANDS (now using general GuildChannel) ======================
-@tree.command(name="add_crystal_excluded_channel", description="Exclude a channel (or forum) from crystal earning")
+# ====================== TICKET FARMING EXCLUSION COMMANDS (forums supported) ======================
+@tree.command(name="add_excluded_channel", description="Exclude a channel or forum from ticket farming")
+@app_commands.describe(channel="Channel or forum to exclude from ticket farming")
+@app_commands.default_permissions(administrator=True)
+async def add_excluded_channel(interaction: discord.Interaction, channel: GuildChannel):
+    guild_data = get_guild_data(interaction.guild.id)
+    cid = str(channel.id)
+    if cid in guild_data["excluded_channels"]:
+        await interaction.response.send_message(f"❌ {channel.mention} is already excluded from ticket farming.", ephemeral=True)
+        return
+    guild_data["excluded_channels"].append(cid)
+    save_data()
+    await interaction.response.send_message(f"✅ {channel.mention} is now **excluded from ticket farming**.\n(Threads inside forums are also excluded)", ephemeral=True)
+
+@tree.command(name="remove_excluded_channel", description="Remove a channel or forum from ticket farming exclusion")
+@app_commands.describe(channel="Channel or forum to remove from exclusion")
+@app_commands.default_permissions(administrator=True)
+async def remove_excluded_channel(interaction: discord.Interaction, channel: GuildChannel):
+    guild_data = get_guild_data(interaction.guild.id)
+    cid = str(channel.id)
+    if cid in guild_data["excluded_channels"]:
+        guild_data["excluded_channels"].remove(cid)
+        save_data()
+        await interaction.response.send_message(f"✅ {channel.mention} is no longer excluded from ticket farming.", ephemeral=True)
+    else:
+        await interaction.response.send_message(f"❌ {channel.mention} was not in the ticket farming exclusion list.", ephemeral=True)
+
+# ====================== CRYSTAL EXCLUSION COMMANDS ======================
+@tree.command(name="add_crystal_excluded_channel", description="Exclude a channel or forum from crystal earning")
 @app_commands.describe(channel="Channel or forum to exclude from crystals")
 @app_commands.default_permissions(administrator=True)
 async def add_crystal_excluded_channel(interaction: discord.Interaction, channel: GuildChannel):
@@ -531,7 +557,7 @@ async def list_excluded_channels(interaction: discord.Interaction):
 
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
-# ====================== ALL OTHER COMMANDS & EVENTS (unchanged) ======================
+# ====================== ORIGINAL COMMANDS ======================
 @tree.command(name="balance", description="Check your tickets and crystals")
 async def balance(interaction: discord.Interaction):
     guild_data = get_guild_data(interaction.guild.id)
@@ -975,7 +1001,7 @@ async def on_message(message: discord.Message):
 
     guild_data = get_guild_data(message.guild.id)
 
-    # Ticket farming exclusion
+    # Ticket farming exclusion (forums now fully supported via commands)
     if is_channel_excluded(message, guild_data.get("excluded_channels", [])):
         daily = guild_data.get("daily_chat_reward", {})
         if daily.get("channel_id") and str(message.channel.id) == daily["channel_id"]:
