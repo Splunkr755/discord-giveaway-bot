@@ -645,15 +645,14 @@ async def setup_hook():
 client.setup_hook = setup_hook
 # ====================== EVENTS ======================
 @client.event
-@client.event
 async def on_ready():
     print(f'✅ Logged in as {client.user}')
     print(f"DEBUG: Tree has {len(list(tree.walk_commands()))} commands registered")
     
     for guild in client.guilds:
         try:
-            # Clear old guild commands first so new ones actually appear
-            await tree.clear_commands(guild=guild)
+            # THIS IS THE FIX - no 'await' here
+            tree.clear_commands(guild=guild)
             
             invites = await guild.invites()
             invite_cache[guild.id] = {inv.code: inv.uses for inv in invites}
