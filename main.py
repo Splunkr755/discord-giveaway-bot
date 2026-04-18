@@ -27,7 +27,7 @@ data = {}
 invite_cache = {}
 last_crystal_time = {}
 
-print("=== JOE FULL CHEST VERSION - 2026-04-18 (DEFINITIVE FULL FIX - NO DUPLICATES) ===")
+print("=== JOE FULL CHEST VERSION - 2026-04-18 (CLEAN - NO DUPLICATES - SYNC FIXED) ===")
 
 def load_data():
     global data
@@ -183,18 +183,22 @@ class FreeGiveawayView(discord.ui.View):
         if message_id not in guild_data["giveaways"]:
             await interaction.response.send_message("❌ This giveaway has already ended!", ephemeral=True)
             return
+
         giveaway = guild_data["giveaways"][message_id]
         entries = giveaway.setdefault("entries", {})
         user_id_str = str(interaction.user.id)
         if user_id_str in entries:
             await interaction.response.send_message("❌ You have already entered!", ephemeral=True)
             return
+
         entries[user_id_str] = 1
         save_data()
+
         try:
             await refresh_giveaway_embed(interaction.message, giveaway)
         except:
             pass
+
         await interaction.response.send_message("✅ You have entered the giveaway!", ephemeral=True)
 
 class ChestView(discord.ui.View):
@@ -359,7 +363,6 @@ async def refresh_chest_embed(guild: discord.Guild):
         color=0xff00ff
     )
     embed.set_footer(text="Click 'Open Chest' below • Rewards are private (ephemeral)")
-
     view = ChestView()
     await message.edit(embed=embed, view=view)
 
@@ -371,7 +374,6 @@ async def refresh_daily_reward_embed(guild: discord.Guild):
     channel = guild.get_channel(int(daily["announcement_channel_id"]))
     if not channel:
         return
-
     try:
         h, m = map(int, daily["time"].split(":"))
         now = datetime.datetime.now(datetime.timezone.utc)
@@ -387,7 +389,6 @@ async def refresh_daily_reward_embed(guild: discord.Guild):
     )
     embed.add_field(name="🕒 Trigger Time", value=f"<t:{timestamp}:t>", inline=True)
     embed.add_field(name="👑 Winners", value=f"**{daily['winners']}**", inline=True)
-
     prize_text = ""
     if daily.get("tickets_reward", 0) > 0:
         prize_text += f"**{daily['tickets_reward']} tickets** each\n"
@@ -396,7 +397,6 @@ async def refresh_daily_reward_embed(guild: discord.Guild):
     if daily.get("custom_prize"):
         prize_text += f"**Custom Prize:** {daily['custom_prize']}\n"
     embed.add_field(name="🎁 Prize", value=prize_text or "None set", inline=False)
-
     embed.set_footer(text="Just chat anywhere • Resets daily at the trigger time")
 
     if guild_data.get("daily_reward_message_id"):
@@ -522,6 +522,7 @@ async def finish_giveaway(guild: discord.Guild, message_id: str, refund: bool = 
         del guild_data["giveaways"][message_id]
         save_data()
         return
+
     if refund:
         tickets_dict = guild_data.setdefault("tickets", {})
         for uid, count in entries.items():
@@ -547,6 +548,44 @@ async def finish_giveaway(guild: discord.Guild, message_id: str, refund: bool = 
                 await channel.send(f"🎉 **GIVEAWAY ENDED!**\n**Prize:** {giveaway['prize']}\n**Winners:** {winner_mentions}\nCongrats! 🎟️")
     del guild_data["giveaways"][message_id]
     save_data()
+
+# ====================== TICKET MANAGEMENT COMMANDS ======================
+@tree.command(name="add_tickets", description="Give tickets to a user (Mod role only)")
+@app_commands.describe(member="User to give tickets to", amount="Number of tickets")
+@app_commands.default_permissions(administrator=True)
+async def add_tickets(interaction: discord.Interaction, member: discord.Member, amount: int):
+    guild_data = get_guild_data(interaction.guild.id)
+    mod_role_id = guild_data.get("ticket_mod_role")
+    if mod_role_id and not any(str(role.id) == mod_role_id for role in interaction.user.roles):
+        await interaction.response.send_message("❌ You need the ticket mod role to use this command!", ephemeral=True)
+        return
+    if amount < 1:
+        await interaction.response.send_message("❌ Amount must be at least 1!", ephemeral=True)
+        return
+    tickets_dict = guild_data.setdefault("tickets", {})
+    uid = str(member.id)
+    tickets_dict[uid] = tickets_dict.get(uid, 0) + amount
+    save_data()
+    await interaction.response.send_message(f"✅ Gave **{amount}** tickets to {member.mention}. They now have **{tickets_dict[uid]}** tickets.", ephemeral=True)
+
+@tree.command(name="remove_tickets", description="Remove tickets from a user (Mod role only)")
+@app_commands.describe(member="User to remove tickets from", amount="Number of tickets")
+@app_commands.default_permissions(administrator=True)
+async def remove_tickets(interaction: discord.Interaction, member: discord.Member, amount: int):
+    guild_data = get_guild_data(interaction.guild.id)
+    mod_role_id = guild_data.get("ticket_mod_role")
+    if mod_role_id and not any(str(role.id) == mod_role_id for role in interaction.user.roles):
+        await interaction.response.send_message("❌ You need the ticket mod role to use this command!", ephemeral=True)
+        return
+    if amount < 1:
+        await interaction.response.send_message("❌ Amount must be at least 1!", ephemeral=True)
+        return
+    tickets_dict = guild_data.setdefault("tickets", {})
+    uid = str(member.id)
+    current = tickets_dict.get(uid, 0)
+    tickets_dict[uid] = max(0, current - amount)
+    save_data()
+    await interaction.response.send_message(f"✅ Removed **{amount}** tickets from {member.mention}. They now have **{tickets_dict[uid]}** tickets.", ephemeral=True)
 
 # ====================== ROLE BONUS COMMANDS ======================
 @tree.command(name="add_role_bonus", description="Add ticket bonus for a role")
@@ -666,7 +705,7 @@ async def my_tickets(interaction: discord.Interaction):
     tickets = guild_data.get("tickets", {}).get(str(interaction.user.id), 0)
     await interaction.response.send_message(f"🎟️ You have **{tickets}** tickets!", ephemeral=True)
 
-# ====================== FIXED CREATE GIVEAWAY (single version) ======================
+# ====================== GIVEAWAY COMMANDS ======================
 @tree.command(name="create_giveaway", description="Create a new raffle/giveaway (costs tickets to enter)")
 @app_commands.describe(
     prize="What the winner gets",
@@ -686,35 +725,26 @@ async def create_giveaway(interaction: discord.Interaction, prize: str, duration
     blacklist = guild_data.get("giveaway_blacklist_roles", [])
     has_host_role = host_role_id is None or any(str(role.id) == str(host_role_id) for role in interaction.user.roles)
     is_blacklisted = any(str(role.id) in blacklist for role in interaction.user.roles) and not has_host_role
-
-    print(f"[DEBUG] Host role check for {interaction.user} | Host role ID: {host_role_id} | Has role: {has_host_role} | Blacklisted: {is_blacklisted}")
-
     if not has_host_role or is_blacklisted:
         await interaction.response.send_message("❌ You do not have permission to host giveaways!\n(You need the host role or admin permissions)", ephemeral=True)
         return
-
     if tickets_per_entry < 1:
         await interaction.response.send_message("❌ Tickets per entry must be at least 1!", ephemeral=True)
         return
-
     await interaction.response.defer()
     seconds = parse_duration(duration)
     end_time = datetime.datetime.now(datetime.timezone.utc).timestamp() + seconds
-
     desc = f"**Prize:** {prize}\n**Winners:** {winners}\n**Ends:** <t:{int(end_time)}:R>\n"
     desc += f"**Cost:** {tickets_per_entry} ticket(s) per entry\n**Giveaway ID:** `pending`\n\n"
     desc += "**Entries:** 0 people (0 total entries)\nClick the button below to enter!"
-
     embed = discord.Embed(title="🎟️ **RAFFLE / GIVEAWAY** 🎟️", description=desc, color=0x00ff00)
     embed.set_footer(text=f"Hosted by {interaction.user.name}")
     if image:
         embed.set_image(url=image.url)
-
     view = GiveawayEnterView()
     send_channel = channel or interaction.channel
     content = ping_role.mention if ping_role else None
     msg = await send_channel.send(content=content, embed=embed, view=view)
-
     guild_data["giveaways"][str(msg.id)] = {
         "message_id": str(msg.id),
         "prize": prize,
@@ -730,7 +760,6 @@ async def create_giveaway(interaction: discord.Interaction, prize: str, duration
     await refresh_giveaway_embed(msg, guild_data["giveaways"][str(msg.id)])
     await interaction.followup.send(f"✅ Giveaway created in {send_channel.mention}!", ephemeral=True)
 
-# ====================== FREE GIVEAWAY ======================
 @tree.command(name="create_free_giveaway", description="Create a free button-entry giveaway (winners get tickets)")
 @app_commands.describe(prize_tickets="How many tickets each winner gets", duration="How long (e.g. 30s, 5m, 1h, 2d)", winners="Number of winners", image="Optional image for the embed", ping_role="Role to ping when the giveaway starts (leave empty for no ping)", channel="Channel to post the giveaway in (leave empty for current channel)")
 @app_commands.default_permissions(administrator=True)
@@ -857,7 +886,6 @@ async def set_daily_chat_reward(interaction: discord.Interaction, announcement_c
     except ValueError:
         await interaction.response.send_message("❌ Time must be in HH:MM 24-hour format!", ephemeral=True)
         return
-
     guild_data = get_guild_data(interaction.guild.id)
     guild_data["daily_chat_reward"] = {
         "announcement_channel_id": str(announcement_channel.id),
@@ -870,9 +898,7 @@ async def set_daily_chat_reward(interaction: discord.Interaction, announcement_c
     }
     guild_data["daily_entries"] = {}
     save_data()
-
     await refresh_daily_reward_embed(interaction.guild)
-
     msg = f"✅ Daily chat rewards enabled!\nAnnouncement in: {announcement_channel.mention}\nTime: **{time}**\nWinners: **{winners}**"
     if tickets_reward > 0:
         msg += f"\nTickets: **{tickets_reward}** each"
@@ -959,7 +985,6 @@ async def setup_chest(interaction: discord.Interaction):
     if not channel:
         await interaction.response.send_message("❌ Chest channel not found!", ephemeral=True)
         return
-
     items = guild_data.get("chest_items", {})
     loot_desc = "**What you can win:**\n"
     if items:
@@ -975,14 +1000,12 @@ async def setup_chest(interaction: discord.Interaction):
             loot_desc += f"• **{name}** — {', '.join(rewards) or 'Nothing'} ({chance:.1f}%)\n"
     else:
         loot_desc += "No items added yet!\n"
-
     embed = discord.Embed(
         title="🎁 Server Chests",
         description=f"Open a chest for **{guild_data.get('chest_open_cost', 50)} crystals**!\n\n{loot_desc}",
         color=0xff00ff
     )
     embed.set_footer(text="Click 'Open Chest' below • Rewards are private (ephemeral)")
-
     view = ChestView()
     msg = await channel.send(embed=embed, view=view)
     guild_data["chest_message_id"] = str(msg.id)
@@ -994,6 +1017,9 @@ async def setup_chest(interaction: discord.Interaction):
 async def force_sync(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
     try:
+        # Extra aggressive sync to fix CommandNotFound errors
+        tree.clear_commands(guild=interaction.guild)
+        tree.copy_global_to(guild=interaction.guild)
         synced = await tree.sync(guild=interaction.guild)
         await interaction.followup.send(f"✅ Successfully synced **{len(synced)}** commands to this server!", ephemeral=True)
         print(f"✅ Manual force sync: {len(synced)} commands synced to {interaction.guild.name}")
@@ -1020,6 +1046,7 @@ async def on_ready():
     print(f'✅ Logged in as {client.user}')
     for guild in client.guilds:
         try:
+            # Aggressive sync to fix CommandNotFound issues
             tree.clear_commands(guild=guild)
             tree.copy_global_to(guild=guild)
             synced = await tree.sync(guild=guild)
@@ -1070,7 +1097,6 @@ async def on_member_join(member):
 async def on_message(message: discord.Message):
     if message.author.bot or not message.guild:
         return
-
     guild_data = get_guild_data(message.guild.id)
 
     if not is_channel_excluded(message, guild_data.get("excluded_channels", [])):
@@ -1084,7 +1110,6 @@ async def on_message(message: discord.Message):
                 extra_tickets += role_bonuses[rid]
             if rid in role_chance_bonuses:
                 extra_chance += role_chance_bonuses[rid]
-
         base_chance = guild_data.get("ticket_chance", 0.25)
         total_chance = base_chance + extra_chance
         tickets_won = 0
@@ -1093,7 +1118,6 @@ async def on_message(message: discord.Message):
             if random.random() < min(chance, 1.0):
                 tickets_won += 1
             chance -= 1.0
-
         if tickets_won > 0:
             total_tickets = tickets_won + extra_tickets
             tickets_dict = guild_data.setdefault("tickets", {})
@@ -1102,7 +1126,6 @@ async def on_message(message: discord.Message):
             new_total = current + total_tickets
             tickets_dict[user_id_str] = new_total
             save_data()
-
             ticket_channel_id = guild_data.get("ticket_channel")
             announcement_channel = message.channel
             if ticket_channel_id:
