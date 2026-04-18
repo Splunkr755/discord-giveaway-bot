@@ -39,6 +39,7 @@ def get_guild_data(guild_id):
     if gid not in data["guilds"]:
         data["guilds"][gid] = {
             "tickets": {},
+            "chest_open_cost": 50,
             "role_bonuses": {},
             "role_chance_bonuses": {},
             "ticket_channel": None,
@@ -175,53 +176,65 @@ class FreeGiveawayView(discord.ui.View):
         await interaction.response.send_message("✅ You have entered the giveaway!", ephemeral=True)
 # ====================== CHEST VIEW ======================
 class ChestView(discord.ui.View):
-    def __init__(self, guild_data):
+    def __init__(self):
         super().__init__(timeout=None)
-        self.guild_data = guild_data
+
     @discord.ui.button(label="Open Chest", style=discord.ButtonStyle.green)
     async def open_chest(self, interaction: discord.Interaction, button: discord.ui.Button):
         guild_data = get_guild_data(interaction.guild.id)
         user_id = str(interaction.user.id)
+        cost = guild_data.get("chest_open_cost", 50)
         crystals = guild_data["crystals"].get(user_id, 0)
-        if not guild_data["chest_items"]:
-            await interaction.response.send_message("No chest items available!", ephemeral=True)
-            return
-        item_name = random.choice(list(guild_data["chest_items"].keys()))
-        item = guild_data["chest_items"][item_name]
-        cost = item.get("crystal_cost", 50)
+
         if crystals < cost:
-            await interaction.response.send_message(f"❌ You need **{cost}** crystals to open this chest!", ephemeral=True)
+            await interaction.response.send_message(f"❌ You need **{cost}** crystals to open the chest!", ephemeral=True)
             return
+
         guild_data["crystals"][user_id] = crystals - cost
         save_data()
-        rewards = item.get("rewards", [{"type": "crystals", "amount": 100, "chance": 1.0}])
-        roll = random.random()
+
+        items = guild_data.get("chest_items", {})
+        if not items:
+            await interaction.response.send_message("❌ No items in the chest yet!", ephemeral=True)
+            return
+
+        # Weighted roll
+        total = sum(item.get("chance", 0) for item in items.values())
+        roll = random.random() * total
         cumulative = 0
-        reward_text = "Nothing"
-        for r in rewards:
-            cumulative += r["chance"]
+        won = None
+        won_name = ""
+
+        for name, data in items.items():
+            cumulative += data.get("chance", 0)
             if roll <= cumulative:
-                if r["type"] == "tickets":
-                    tickets_dict = guild_data.setdefault("tickets", {})
-                    tickets_dict[user_id] = tickets_dict.get(user_id, 0) + r["amount"]
-                    reward_text = f"**{r['amount']} tickets**"
-                elif r["type"] == "crystals":
-                    guild_data["crystals"][user_id] = guild_data["crystals"].get(user_id, 0) + r["amount"]
-                    reward_text = f"**{r['amount']} crystals**"
-                else:
-                    reward_text = r.get("prize", "Custom prize")
+                won = data
+                won_name = name
                 break
+
+        reward_text = ""
+        if won.get("crystal_prize", 0) > 0:
+            guild_data["crystals"][user_id] = guild_data["crystals"].get(user_id, 0) + won["crystal_prize"]
+            reward_text += f"**{won['crystal_prize']} crystals** "
+        if won.get("ticket_prize", 0) > 0:
+            tickets_dict = guild_data.setdefault("tickets", {})
+            tickets_dict[user_id] = tickets_dict.get(user_id, 0) + won["ticket_prize"]
+            reward_text += f"**{won['ticket_prize']} tickets** "
+
         save_data()
-        await interaction.response.send_message(f"🎉 You opened a chest and got **{reward_text}**!", ephemeral=False)
-        if any(r.get("chance", 0) <= 0.001 for r in rewards):
-            special_ch = interaction.guild.get_channel(int(guild_data.get("special_reward_channel_id", 0)))
-            if special_ch:
-                await special_ch.send(f"🌟 **MASSIVE WIN!** {interaction.user.mention} just pulled a **super rare** reward from a chest!")
+
+        await interaction.response.send_message(f"🎉 You opened the chest and got **{won_name}** → {reward_text or 'nothing'}!", ephemeral=False)
+
+        if won.get("chance", 0) <= 0.001 and guild_data.get("special_reward_channel_id"):
+            ch = interaction.guild.get_channel(int(guild_data["special_reward_channel_id"]))
+            if ch:
+                await ch.send(f"🌟 **MASSIVE WIN!** {interaction.user.mention} just hit a super rare item from the chest!")
+
     @discord.ui.button(label="Check Crystals", style=discord.ButtonStyle.gray)
     async def check_crystals(self, interaction: discord.Interaction, button: discord.ui.Button):
         guild_data = get_guild_data(interaction.guild.id)
         crystals = guild_data["crystals"].get(str(interaction.user.id), 0)
-        await interaction.response.send_message(f"💎 You currently have **{crystals}** crystals!", ephemeral=True)
+        await interaction.response.send_message(f"💎 You have **{crystals}** crystals!", ephemeral=True)
 # ====================== SHOP PAGINATION VIEW ======================
 class ShopView(discord.ui.View):
     def __init__(self, guild_data, page=0):
@@ -556,6 +569,17 @@ async def set_chest_channel(interaction: discord.Interaction, channel: discord.T
     guild_data["chest_channel_id"] = str(channel.id)
     save_data()
     await interaction.response.send_message(f"✅ Chest embed channel set to {channel.mention}!", ephemeral=True)
+@tree.command(name="set_chest_open_cost", description="Set the crystal cost to open the chest")
+@app_commands.describe(amount="Crystals required to open the chest")
+@app_commands.default_permissions(administrator=True)
+async def set_chest_open_cost(interaction: discord.Interaction, amount: int):
+    if amount < 1:
+        await interaction.response.send_message("❌ Cost must be at least 1!", ephemeral=True)
+        return
+    guild_data = get_guild_data(interaction.guild.id)
+    guild_data["chest_open_cost"] = amount
+    save_data()
+    await interaction.response.send_message(f"✅ Opening the chest now costs **{amount}** crystals!", ephemeral=True)
 @tree.command(name="set_special_reward_channel", description="Set the channel for rare chest win announcements")
 @app_commands.describe(channel="Channel for rare announcements")
 @app_commands.default_permissions(administrator=True)
@@ -564,16 +588,39 @@ async def set_special_reward_channel(interaction: discord.Interaction, channel: 
     guild_data["special_reward_channel_id"] = str(channel.id)
     save_data()
     await interaction.response.send_message(f"✅ Special reward announcement channel set to {channel.mention}!", ephemeral=True)
-@tree.command(name="add_chest_item", description="Add a new chest item (Chest managers only)")
+@tree.command(name="add_chest_item", description="Add a reward to the single chest loot table")
 @app_commands.describe(
-    name="Chest item name",
-    crystal_cost="Crystals required to open",
-    tickets_reward="Tickets reward (0 = none)",
-    crystals_reward="Crystals reward (0 = none)",
-    custom_prize="Custom prize text (leave blank for none)",
-    tickets_chance="Chance for tickets reward (0-1)",
-    crystals_chance="Chance for crystals reward (0-1)",
-    custom_chance="Chance for custom prize (0-1)"
+    name="Name of the reward",
+    crystal_prize="Crystals awarded (0 = none, must be >=1 if used)",
+    ticket_prize="Tickets awarded (0 = none)",
+    chance="Drop chance (0.0 - 1.0)"
+)
+async def add_chest_item(interaction: discord.Interaction, name: str, crystal_prize: int = 0, ticket_prize: int = 0, chance: float = 0.0):
+    guild_data = get_guild_data(interaction.guild.id)
+    manager_role_id = guild_data.get("chest_manager_role")
+    is_manager = manager_role_id is None or any(str(r.id) == manager_role_id for r in interaction.user.roles)
+    if not is_manager and not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message("❌ You do not have permission to add chest items!", ephemeral=True)
+        return
+
+    if name in guild_data["chest_items"]:
+        await interaction.response.send_message("❌ An item with this name already exists!", ephemeral=True)
+        return
+    if chance <= 0 or chance > 1:
+        await interaction.response.send_message("❌ Chance must be between 0.0 and 1.0!", ephemeral=True)
+        return
+    if crystal_prize < 0 or ticket_prize < 0:
+        await interaction.response.send_message("❌ Prizes cannot be negative!", ephemeral=True)
+        return
+
+    guild_data["chest_items"][name] = {
+        "name": name,
+        "crystal_prize": crystal_prize,
+        "ticket_prize": ticket_prize,
+        "chance": chance
+    }
+    save_data()
+    await interaction.response.send_message(f"✅ Added **{name}** to the chest loot table (chance: {chance*100:.1f}%)", ephemeral=True)
 )
 async def add_chest_item(interaction: discord.Interaction, name: str, crystal_cost: int, tickets_reward: int = 0, crystals_reward: int = 0, custom_prize: str = None, tickets_chance: float = 0.0, crystals_chance: float = 0.0, custom_chance: float = 0.0):
     guild_data = get_guild_data(interaction.guild.id)
