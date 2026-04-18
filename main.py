@@ -653,7 +653,7 @@ async def on_ready():
             invites = await guild.invites()
             invite_cache[guild.id] = {inv.code: inv.uses for inv in invites}
             print(f"✅ Cached {len(invites)} invites for {guild.name}")
-            synced = await tree.sync(guild=guild)
+                        synced = await tree.sync(guild=guild)
             print(f'✅ Synced {len(synced)} commands to guild: {guild.name} ({guild.id})')
         except Exception as e:
             print(f'❌ Sync failed for {guild.name}: {e}')
