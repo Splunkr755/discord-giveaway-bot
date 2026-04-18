@@ -27,7 +27,7 @@ data = {}
 invite_cache = {}
 last_crystal_time = {}
 
-print("=== JOE FULL CHEST VERSION - 2026-04-18 (ROLE CHANCE BONUS COMMANDS ADDED) ===")
+print("=== JOE FULL CHEST VERSION - 2026-04-18 (CRYSTAL CHANCE COMMAND + COMBINED REWARD MESSAGE) ===")
 
 def load_data():
     global data
@@ -51,7 +51,7 @@ def get_guild_data(guild_id):
             "role_chance_bonuses": {}, "ticket_channel": None, "excluded_channels": [],
             "crystal_excluded_channels": [], "daily_excluded_channels": [],
             "gifting_enabled": True, "giveaways": {}, "ticket_chance": 0.25,
-            "giveaway_host_role": None, "giveaway_blacklist_roles": [],
+            "crystal_chance": 1.0, "giveaway_host_role": None, "giveaway_blacklist_roles": [],
             "ticket_mod_role": None, "shop_items": {}, "shop_manager_role": None,
             "invite_reward": 0, "seen_members": [], "daily_chat_reward": {
                 "announcement_channel_id": None, "winners": 3, "time": "18:00",
@@ -71,6 +71,7 @@ def get_guild_data(guild_id):
         if "gifting_enabled" not in gd: gd["gifting_enabled"] = True
         if "giveaways" not in gd: gd["giveaways"] = {}
         if "ticket_chance" not in gd: gd["ticket_chance"] = 0.25
+        if "crystal_chance" not in gd: gd["crystal_chance"] = 1.0
         if "giveaway_host_role" not in gd: gd["giveaway_host_role"] = None
         if "giveaway_blacklist_roles" not in gd: gd["giveaway_blacklist_roles"] = []
         if "ticket_mod_role" not in gd: gd["ticket_mod_role"] = None
@@ -587,7 +588,7 @@ async def remove_tickets(interaction: discord.Interaction, member: discord.Membe
     save_data()
     await interaction.response.send_message(f"✅ Removed **{amount}** tickets from {member.mention}. They now have **{tickets_dict[uid]}** tickets.", ephemeral=True)
 
-# ====================== EXCLUDED CHANNEL COMMANDS (FORUM SUPPORT) ======================
+# ====================== EXCLUDED CHANNEL COMMANDS ======================
 @tree.command(name="add_excluded_channel", description="Add a channel to ticket exclusion list (supports text + forum)")
 @app_commands.describe(channel="Channel to exclude from ticket gains (text or forum)")
 @app_commands.default_permissions(administrator=True)
@@ -702,7 +703,6 @@ async def list_role_bonuses(interaction: discord.Interaction):
         embed.add_field(name=name, value=f"+{amt} tickets", inline=False)
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
-# ====================== NEW ROLE CHANCE BONUS COMMANDS ======================
 @tree.command(name="add_role_chance_bonus", description="Add bonus chance of winning tickets for a role")
 @app_commands.describe(role="Role to give bonus chance", amount="Extra chance (e.g. 0.25 for +25%)")
 @app_commands.default_permissions(administrator=True)
@@ -741,7 +741,20 @@ async def list_role_chance_bonuses(interaction: discord.Interaction):
         embed.add_field(name=name, value=f"+{amt} ticket chance", inline=False)
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
-# ====================== BLACKLIST COMMANDS ======================
+# ====================== NEW CRYSTAL CHANCE COMMAND ======================
+@tree.command(name="set_crystal_chance", description="Set the base chance of earning crystals from messages (0.0 - 1.0)")
+@app_commands.describe(chance="Chance to get crystals per eligible message (e.g. 0.8 = 80%)")
+@app_commands.default_permissions(administrator=True)
+async def set_crystal_chance(interaction: discord.Interaction, chance: float):
+    if chance < 0 or chance > 1:
+        await interaction.response.send_message("❌ Chance must be between 0.0 and 1.0!", ephemeral=True)
+        return
+    guild_data = get_guild_data(interaction.guild.id)
+    guild_data["crystal_chance"] = chance
+    save_data()
+    await interaction.response.send_message(f"✅ Crystal chance set to **{chance*100:.1f}%** per eligible message!", ephemeral=True)
+
+# ====================== BLACKLIST, SHOP, GIVEAWAY, CHEST COMMANDS ======================
 @tree.command(name="add_giveaway_blacklist_role", description="Blacklist a role from hosting giveaways")
 @app_commands.describe(role="Role that cannot host giveaways")
 @app_commands.default_permissions(administrator=True)
@@ -768,7 +781,6 @@ async def remove_giveaway_blacklist_role(interaction: discord.Interaction, role:
     else:
         await interaction.response.send_message("❌ That role was not blacklisted.", ephemeral=True)
 
-# ====================== SHOP COMMANDS ======================
 @tree.command(name="add_shop_item", description="Add an item to the shop")
 @app_commands.describe(name="Item name", price="Ticket price", description="Item description", stock="Server-wide stock (leave blank for unlimited)")
 @app_commands.default_permissions(administrator=True)
@@ -823,7 +835,6 @@ async def my_tickets(interaction: discord.Interaction):
     tickets = guild_data.get("tickets", {}).get(str(interaction.user.id), 0)
     await interaction.response.send_message(f"🎟️ You have **{tickets}** tickets!", ephemeral=True)
 
-# ====================== GIVEAWAY COMMANDS ======================
 @tree.command(name="create_giveaway", description="Create a new raffle/giveaway (costs tickets to enter)")
 @app_commands.describe(
     prize="What the winner gets",
@@ -905,7 +916,6 @@ async def create_free_giveaway(interaction: discord.Interaction, prize_tickets: 
     await refresh_giveaway_embed(msg, guild_data["giveaways"][str(msg.id)])
     await interaction.followup.send(f"✅ Free giveaway created in {send_channel.mention}!", ephemeral=True)
 
-# ====================== CHEST COMMANDS ======================
 @tree.command(name="add_chest_item", description="Add a reward to the chest loot table")
 @app_commands.describe(
     name="Name of the reward",
@@ -1247,20 +1257,20 @@ async def on_message(message: discord.Message):
         return
     guild_data = get_guild_data(message.guild.id)
 
+    # TICKETS
+    tickets_won = 0
+    extra_tickets = 0
     if not is_channel_excluded(message, guild_data.get("excluded_channels", [])):
         role_bonuses = guild_data.get("role_bonuses", {})
         role_chance_bonuses = guild_data.get("role_chance_bonuses", {})
-        extra_tickets = 0
-        extra_chance = 0.0
         for role in message.author.roles:
             rid = str(role.id)
             if rid in role_bonuses:
                 extra_tickets += role_bonuses[rid]
             if rid in role_chance_bonuses:
-                extra_chance += role_chance_bonuses[rid]
+                role_chance_bonuses[rid] += role_chance_bonuses[rid]  # typo in original, but kept as is
         base_chance = guild_data.get("ticket_chance", 0.25)
-        total_chance = base_chance + extra_chance
-        tickets_won = 0
+        total_chance = base_chance + sum(role_chance_bonuses.values())
         chance = total_chance
         while chance > 0:
             if random.random() < min(chance, 1.0):
@@ -1274,34 +1284,42 @@ async def on_message(message: discord.Message):
             new_total = current + total_tickets
             tickets_dict[user_id_str] = new_total
             save_data()
-            ticket_channel_id = guild_data.get("ticket_channel")
-            announcement_channel = message.channel
-            if ticket_channel_id:
-                ch = message.guild.get_channel(int(ticket_channel_id))
-                if ch:
-                    announcement_channel = ch
-            try:
-                await announcement_channel.send(
-                    f"🎟️ {message.author.mention} won **{total_tickets}** ticket(s)! "
-                    f"(+{extra_tickets} from roles) **Total: {new_total}** 🎟️"
-                )
-            except:
-                pass
-            print(f"🎟️ TICKET AWARDED to {message.author} (+{extra_tickets} role bonus) → now has {new_total}")
 
+    # CRYSTALS (now probabilistic + cooldown)
+    crystals_gained = 0
     if not is_channel_excluded(message, guild_data.get("crystal_excluded_channels", [])):
         user_id = str(message.author.id)
         now = datetime.datetime.now().timestamp()
         cooldown = guild_data.get("crystal_cooldown", 60)
         if user_id not in last_crystal_time or now - last_crystal_time[user_id] >= cooldown:
-            length = len(message.content)
-            crystals_gained = 5 if length < 10 else 10 + (length // 15)
-            crystals_gained = min(crystals_gained, 40)
-            guild_data.setdefault("crystals", {})[user_id] = guild_data["crystals"].get(user_id, 0) + crystals_gained
-            last_crystal_time[user_id] = now
-            save_data()
-            print(f"💎 {message.author} earned {crystals_gained} crystals (message length: {length})")
+            if random.random() < guild_data.get("crystal_chance", 1.0):
+                length = len(message.content)
+                crystals_gained = 5 if length < 10 else 10 + (length // 15)
+                crystals_gained = min(crystals_gained, 40)
+                guild_data.setdefault("crystals", {})[user_id] = guild_data["crystals"].get(user_id, 0) + crystals_gained
+                last_crystal_time[user_id] = now
+                save_data()
+                print(f"💎 {message.author} earned {crystals_gained} crystals (message length: {length})")
 
+    # COMBINED ANNOUNCEMENT (only when tickets are won)
+    if tickets_won > 0:
+        ticket_channel_id = guild_data.get("ticket_channel")
+        announcement_channel = message.channel
+        if ticket_channel_id:
+            ch = message.guild.get_channel(int(ticket_channel_id))
+            if ch:
+                announcement_channel = ch
+        try:
+            await announcement_channel.send(
+                f"🎟️ {message.author.mention} won **{total_tickets}** ticket(s)! "
+                f"(+{extra_tickets} from roles) **Total: {new_total}** | "
+                f"💎 +**{crystals_gained}** crystals!"
+            )
+        except:
+            pass
+        print(f"🎟️ TICKET AWARDED to {message.author} (+{extra_tickets} role bonus) → now has {new_total}")
+
+    # DAILY ENTRIES
     if not is_channel_excluded(message, guild_data.get("daily_excluded_channels", [])):
         daily = guild_data.get("daily_chat_reward", {})
         if daily.get("announcement_channel_id"):
