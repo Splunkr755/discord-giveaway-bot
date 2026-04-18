@@ -27,7 +27,7 @@ data = {}
 invite_cache = {}
 last_crystal_time = {}
 
-print("=== JOE FULL CHEST VERSION - 2026-04-18 (GLOBAL DAILY + CRYSTALS + EASY SETUP + FORUMS) ===")
+print("=== JOE FULL CHEST VERSION - 2026-04-18 (FINAL CLEAN - TICKETS PER ENTRY + GLOBAL DAILY) ===")
 
 def load_data():
     global data
@@ -1199,7 +1199,7 @@ async def on_message(message: discord.Message):
             save_data()
             print(f"💎 {message.author} earned {crystals_gained} crystals (message length: {length})")
 
-    # Daily chat rewards - now global (all channels except excluded)
+    # Daily chat rewards - global
     if not is_channel_excluded(message, guild_data.get("daily_excluded_channels", [])):
         daily = guild_data.get("daily_chat_reward", {})
         if daily.get("announcement_channel_id"):
