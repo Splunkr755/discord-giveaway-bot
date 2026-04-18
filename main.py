@@ -720,8 +720,7 @@ async def on_message(message: discord.Message):
         try:
             await announcement_channel.send(
                 f"🎟️ {message.author.mention} won **{total_tickets}** ticket(s)! "
-                f"(+{extra_tickets} from roles) **Total: {new_total}** 🎟️",
-                delete_after=12
+                f"(+{extra_tickets} from roles) **Total: {new_total}** 🎟️"
             )
         except:
             pass
