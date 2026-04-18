@@ -27,7 +27,7 @@ data = {}
 invite_cache = {}
 last_crystal_time = {}
 
-print("=== JOE FULL CHEST VERSION - 2026-04-18 (ULTIMATE NUKE - DUPLICATES FIXED) ===")
+print("=== JOE FULL CHEST VERSION - 2026-04-18 (FINAL CLEAN - DUPLICATES FIXED) ===")
 
 def load_data():
     global data
@@ -1013,25 +1013,24 @@ async def setup_chest(interaction: discord.Interaction):
     await interaction.response.send_message(f"✅ Chest embed posted in {channel.mention} and will now auto-update when items change!", ephemeral=True)
 
 # ====================== ULTIMATE NUKE COMMAND ======================
-@tree.command(name="nuke_all_commands", description="NUKE EVERYTHING - clears global + guild commands (use this when force_sync fails)")
+@tree.command(name="nuke_all_commands", description="ULTIMATE NUKE - clears global + guild commands (use this when duplicates appear)")
 @app_commands.default_permissions(administrator=True)
 async def nuke_all_commands(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
     try:
-        # Clear global commands first
+        # Global clear first
         await tree.sync(guild=None)
-        # Clear guild commands
+        # Guild clear
         tree.clear_commands(guild=interaction.guild)
         await tree.sync(guild=interaction.guild)
-        # Clear again for safety
-        tree.clear_commands(guild=interaction.guild)
+        # Re-register clean
         tree.copy_global_to(guild=interaction.guild)
         synced = await tree.sync(guild=interaction.guild)
         
         await interaction.followup.send(
             f"✅ **ULTIMATE NUKE COMPLETE!**\n"
             f"Global and guild commands have been wiped and re-registered (**{len(synced)}** commands).\n"
-            f"Duplicates should now be gone. Wait 30 seconds and check your command list.",
+            f"Wait 60 seconds, then check your slash command list again. Duplicates should be gone.",
             ephemeral=True
         )
         print(f"✅ ULTIMATE NUKE RUN on {interaction.guild.name} - {len(synced)} commands")
@@ -1058,11 +1057,8 @@ async def on_ready():
     print(f'✅ Logged in as {client.user}')
     for guild in client.guilds:
         try:
-            # Aggressive global + guild clear on startup
-            await tree.sync(guild=None)
+            # Gentle single sync on startup
             tree.clear_commands(guild=guild)
-            await tree.sync(guild=guild)
-            tree.copy_global_to(guild=guild)
             synced = await tree.sync(guild=guild)
             print(f'✅ Synced {len(synced)} commands to {guild.name}')
         except Exception as e:
