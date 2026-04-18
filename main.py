@@ -27,7 +27,7 @@ data = {}
 invite_cache = {}
 last_crystal_time = {}
 
-print("=== JOE FULL CHEST VERSION - 2026-04-18 (SEPARATE CUSTOM PRIZE ANNOUNCE COMMAND) ===")
+print("=== JOE FULL CHEST VERSION - 2026-04-18 (AUTOMATIC CUSTOM PRIZE ANNOUNCEMENTS + SEPARATE CHANNEL COMMAND) ===")
 
 def load_data():
     global data
@@ -60,6 +60,7 @@ def get_guild_data(guild_id):
             }, "daily_entries": {}, "crystal_cooldown": 60,
             "chest_manager_role": None, "chest_items": {},
             "chest_channel_id": None, "special_reward_channel_id": None,
+            "custom_prize_channel_id": None,
             "crystals": {}, "chest_message_id": None, "daily_reward_message_id": None
         }
     else:
@@ -86,6 +87,7 @@ def get_guild_data(guild_id):
         if "chest_items" not in gd: gd["chest_items"] = {}
         if "chest_channel_id" not in gd: gd["chest_channel_id"] = None
         if "special_reward_channel_id" not in gd: gd["special_reward_channel_id"] = None
+        if "custom_prize_channel_id" not in gd: gd["custom_prize_channel_id"] = None
         if "crystals" not in gd: gd["crystals"] = {}
         if "chest_message_id" not in gd: gd["chest_message_id"] = None
         if "daily_reward_message_id" not in gd: gd["daily_reward_message_id"] = None
@@ -254,7 +256,13 @@ class ChestView(discord.ui.View):
             ephemeral=True
         )
 
-        # Rare item announcement (still automatic)
+        # AUTOMATIC CUSTOM PRIZE ANNOUNCEMENT (new feature)
+        if won.get("custom_prize") and guild_data.get("custom_prize_channel_id"):
+            ch = interaction.guild.get_channel(int(guild_data["custom_prize_channel_id"]))
+            if ch:
+                await ch.send(f"🎉 **CUSTOM PRIZE WON!** {interaction.user.mention} just won **{won_name}** → **{won['custom_prize']}** from the chest! 🎁")
+
+        # Rare item announcement (still uses the old special reward channel)
         if won.get("chance", 0) <= 0.001 and guild_data.get("special_reward_channel_id"):
             ch = interaction.guild.get_channel(int(guild_data["special_reward_channel_id"]))
             if ch:
@@ -754,36 +762,15 @@ async def set_crystal_chance(interaction: discord.Interaction, chance: float):
     save_data()
     await interaction.response.send_message(f"✅ Crystal chance set to **{chance*100:.1f}%** per eligible message!", ephemeral=True)
 
-# ====================== NEW SEPARATE CUSTOM PRIZE COMMAND ======================
-@tree.command(name="announce_custom_prize", description="Announce that a user won a custom prize from the chest")
-@app_commands.describe(
-    winner="The user who won the custom prize",
-    item_name="Name of the chest item they won",
-    prize_text="The exact custom prize they received"
-)
+# ====================== NEW CUSTOM PRIZE CHANNEL COMMAND ======================
+@tree.command(name="set_custom_prize_channel", description="Set the channel for automatic custom prize win announcements from the chest")
+@app_commands.describe(channel="Channel where custom prize wins will be announced automatically")
 @app_commands.default_permissions(administrator=True)
-async def announce_custom_prize(interaction: discord.Interaction, winner: discord.Member, item_name: str, prize_text: str):
+async def set_custom_prize_channel(interaction: discord.Interaction, channel: discord.TextChannel):
     guild_data = get_guild_data(interaction.guild.id)
-    channel_id = guild_data.get("special_reward_channel_id")
-    if not channel_id:
-        await interaction.response.send_message("❌ No special reward channel has been set! Use `/set_special_reward_channel` first.", ephemeral=True)
-        return
-
-    channel = interaction.guild.get_channel(int(channel_id))
-    if not channel:
-        await interaction.response.send_message("❌ The special reward channel could not be found!", ephemeral=True)
-        return
-
-    embed = discord.Embed(
-        title="🎉 CUSTOM PRIZE WON!",
-        description=f"{winner.mention} just won **{item_name}** from the chest!",
-        color=0xff00ff
-    )
-    embed.add_field(name="Prize", value=prize_text, inline=False)
-    embed.set_footer(text=f"Announced by {interaction.user.name}")
-
-    await channel.send(embed=embed)
-    await interaction.response.send_message(f"✅ Custom prize announcement sent to the special reward channel!", ephemeral=True)
+    guild_data["custom_prize_channel_id"] = str(channel.id)
+    save_data()
+    await interaction.response.send_message(f"✅ Custom prize announcements will now be sent to {channel.mention} automatically whenever someone wins a custom prize from the chest!", ephemeral=True)
 
 # ====================== BLACKLIST, SHOP, GIVEAWAY, CHEST COMMANDS ======================
 @tree.command(name="add_giveaway_blacklist_role", description="Blacklist a role from hosting giveaways")
@@ -1183,8 +1170,8 @@ async def set_chest_open_cost(interaction: discord.Interaction, amount: int):
     await interaction.response.send_message(f"✅ Opening the chest now costs **{amount}** crystals!", ephemeral=True)
     await refresh_chest_embed(interaction.guild)
 
-@tree.command(name="set_special_reward_channel", description="Set the channel for rare chest win announcements AND custom prize announcements")
-@app_commands.describe(channel="Channel for announcements")
+@tree.command(name="set_special_reward_channel", description="Set the channel for rare chest win announcements")
+@app_commands.describe(channel="Channel for rare announcements")
 @app_commands.default_permissions(administrator=True)
 async def set_special_reward_channel(interaction: discord.Interaction, channel: discord.TextChannel):
     guild_data = get_guild_data(interaction.guild.id)
