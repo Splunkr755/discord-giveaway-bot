@@ -27,7 +27,7 @@ data = {}
 invite_cache = {}
 last_crystal_time = {}
 
-print("=== JOE FULL CHEST VERSION - 2026-04-18 (FINAL CLEAN - TICKETS PER ENTRY + GLOBAL DAILY) ===")
+print("=== JOE FULL CHEST VERSION - 2026-04-18 (COMPLETE - NO DUPLICATES) ===")
 
 def load_data():
     global data
@@ -752,9 +752,13 @@ async def create_giveaway(interaction: discord.Interaction, prize: str, duration
     blacklist = guild_data.get("giveaway_blacklist_roles", [])
     has_host_role = host_role_id is None or any(str(role.id) == str(host_role_id) for role in interaction.user.roles)
     is_blacklisted = any(str(role.id) in blacklist for role in interaction.user.roles)
+
+    print(f"[DEBUG] Host role check for {interaction.user} | Host role ID: {host_role_id} | Has role: {has_host_role} | Blacklisted: {is_blacklisted}")
+
     if not has_host_role or is_blacklisted:
-        await interaction.response.send_message("❌ You do not have permission to host giveaways!", ephemeral=True)
+        await interaction.response.send_message("❌ You do not have permission to host giveaways!\n(You need the host role or admin permissions)", ephemeral=True)
         return
+
     if tickets_per_entry < 1:
         await interaction.response.send_message("❌ Tickets per entry must be at least 1!", ephemeral=True)
         return
