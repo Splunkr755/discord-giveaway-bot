@@ -27,7 +27,7 @@ data = {}
 invite_cache = {}
 last_crystal_time = {}
 
-print("=== JOE FULL CHEST VERSION - 2026-04-18 (FORUMS FULLY SUPPORTED - NO DUPLICATES) ===")
+print("=== JOE FULL CHEST VERSION - 2026-04-18 (DAILY REWARDS ANNOUNCEMENT EMBED) ===")
 
 def load_data():
     global data
@@ -58,7 +58,8 @@ def get_guild_data(guild_id):
             }, "daily_entries": {}, "crystal_cooldown": 60,
             "chest_manager_role": None, "chest_items": {},
             "chest_channel_id": None, "special_reward_channel_id": None,
-            "crystals": {}, "chest_message_id": None
+            "crystals": {}, "chest_message_id": None,
+            "daily_reward_message_id": None  # NEW: persistent announcement embed
         }
     else:
         gd = data["guilds"][gid]
@@ -84,6 +85,7 @@ def get_guild_data(guild_id):
         if "special_reward_channel_id" not in gd: gd["special_reward_channel_id"] = None
         if "crystals" not in gd: gd["crystals"] = {}
         if "chest_message_id" not in gd: gd["chest_message_id"] = None
+        if "daily_reward_message_id" not in gd: gd["daily_reward_message_id"] = None
     return data["guilds"][gid]
 
 # ====================== VIEWS & MODALS ======================
@@ -348,6 +350,49 @@ async def refresh_chest_embed(guild: discord.Guild):
     view = ChestView()
     await message.edit(embed=embed, view=view)
 
+# ====================== DAILY REWARDS ANNOUNCEMENT EMBED (NEW) ======================
+async def refresh_daily_reward_embed(guild: discord.Guild):
+    guild_data = get_guild_data(guild.id)
+    daily = guild_data.get("daily_chat_reward", {})
+    if not daily.get("channel_id"):
+        return
+    channel = guild.get_channel(int(daily["channel_id"]))
+    if not channel:
+        return
+
+    embed = discord.Embed(
+        title="🏆 Daily Chat Rewards",
+        description="Chat in this channel **any time today** to earn entries!\nThe more messages you send, the more entries you get.",
+        color=0x00ff88
+    )
+    embed.add_field(name="🕒 Trigger Time", value=f"**{daily['time']}** (server time)", inline=True)
+    embed.add_field(name="👑 Winners", value=f"**{daily['winners']}**", inline=True)
+
+    prize_text = ""
+    if daily["prize_type"] in ["tickets", "both"]:
+        prize_text += f"**{daily['reward']} tickets** each\n"
+    if daily.get("custom_prize"):
+        prize_text += f"**Custom Prize:** {daily['custom_prize']}\n"
+    embed.add_field(name="🎁 Prize", value=prize_text or "None set", inline=False)
+
+    embed.set_footer(text="Just send any message in this channel to participate • Resets daily")
+
+    # If we already have a message, edit it. Otherwise post new and save ID
+    if guild_data.get("daily_reward_message_id"):
+        try:
+            message = await channel.fetch_message(int(guild_data["daily_reward_message_id"]))
+            await message.edit(embed=embed)
+            return
+        except discord.NotFound:
+            guild_data["daily_reward_message_id"] = None  # message was deleted
+        except:
+            pass
+
+    # Post new embed
+    msg = await channel.send(embed=embed)
+    guild_data["daily_reward_message_id"] = str(msg.id)
+    save_data()
+
 # ====================== HELPERS ======================
 def parse_duration(duration_str: str) -> int:
     duration_str = duration_str.lower().strip()
@@ -432,7 +477,7 @@ async def daily_chat_checker(client):
                 save_data()
                 channel = guild.get_channel(int(daily["channel_id"]))
                 if channel:
-                    embed = discord.Embed(title="🏆 Daily Chat Rewards", color=0x00ff88)
+                    embed = discord.Embed(title="🏆 Daily Chat Rewards - WINNERS!", color=0x00ff88)
                     embed.add_field(name="Congratulations to the Winners!", value=", ".join(winner_mentions), inline=False)
                     if daily["prize_type"] in ["tickets", "both"]:
                         embed.add_field(name="Reward", value=f"**{daily['reward']} tickets** each", inline=False)
@@ -480,7 +525,7 @@ async def finish_giveaway(guild: discord.Guild, message_id: str, refund: bool = 
     del guild_data["giveaways"][message_id]
     save_data()
 
-# ====================== TICKET FARMING EXCLUSION (forums supported) ======================
+# ====================== EXCLUSION COMMANDS ======================
 @tree.command(name="add_excluded_channel", description="Exclude a channel or forum from ticket farming")
 @app_commands.describe(channel="Channel or forum to exclude from ticket farming")
 @app_commands.default_permissions(administrator=True)
@@ -507,7 +552,6 @@ async def remove_excluded_channel(interaction: discord.Interaction, channel: Gui
     else:
         await interaction.response.send_message(f"❌ {channel.mention} was not in the ticket farming exclusion list.", ephemeral=True)
 
-# ====================== CRYSTAL EXCLUSION ======================
 @tree.command(name="add_crystal_excluded_channel", description="Exclude a channel or forum from crystal earning")
 @app_commands.describe(channel="Channel or forum to exclude from crystals")
 @app_commands.default_permissions(administrator=True)
@@ -557,10 +601,7 @@ async def list_excluded_channels(interaction: discord.Interaction):
 
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
-# ====================== ALL OTHER COMMANDS (unchanged) ======================
-# (balance, give_tickets, remove_tickets, shop, list_chest_items, remove_chest_item,
-# create_giveaway, create_free_giveaway, set_... roles, set_crystal_cooldown, etc.)
-
+# ====================== COMMANDS ======================
 @tree.command(name="balance", description="Check your tickets and crystals")
 async def balance(interaction: discord.Interaction):
     guild_data = get_guild_data(interaction.guild.id)
@@ -805,8 +846,14 @@ async def set_daily_chat_reward(interaction: discord.Interaction, channel: disco
     }
     guild_data["daily_entries"] = {}
     save_data()
-    msg = f"✅ Daily chat rewards enabled!\nChannel: {channel.mention}\nReward: **{reward} tickets** each\nWinners: **{winners}**\nTime: **{time}**"
-    if prize_type in ["custom", "both"] and custom_prize:
+
+    # NEW: Send / update the informational announcement embed in the daily channel
+    await refresh_daily_reward_embed(interaction.guild)
+
+    msg = f"✅ Daily chat rewards enabled in {channel.mention}!\nTime: **{time}**\nWinners: **{winners}**"
+    if prize_type in ["tickets", "both"]:
+        msg += f"\nReward: **{reward} tickets** each"
+    if custom_prize:
         msg += f"\nCustom prize: {custom_prize}"
     await interaction.response.send_message(msg, ephemeral=True)
 
