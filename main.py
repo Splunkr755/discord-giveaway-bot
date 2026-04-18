@@ -647,6 +647,7 @@ client.setup_hook = setup_hook
 @client.event
 async def on_ready():
     print(f'✅ Logged in as {client.user}')
+    print(f"DEBUG: Tree has {len(list(tree.walk_commands()))} commands registered")   # ← ADD THIS LINE
     for guild in client.guilds:
         try:
             invites = await guild.invites()
