@@ -645,15 +645,21 @@ async def setup_hook():
 client.setup_hook = setup_hook
 # ====================== EVENTS ======================
 @client.event
+@client.event
 async def on_ready():
     print(f'✅ Logged in as {client.user}')
-    print(f"DEBUG: Tree has {len(list(tree.walk_commands()))} commands registered")   # ← ADD THIS LINE
+    print(f"DEBUG: Tree has {len(list(tree.walk_commands()))} commands registered")
+    
     for guild in client.guilds:
         try:
+            # Clear old guild commands first so new ones actually appear
+            await tree.clear_commands(guild=guild)
+            
             invites = await guild.invites()
             invite_cache[guild.id] = {inv.code: inv.uses for inv in invites}
             print(f"✅ Cached {len(invites)} invites for {guild.name}")
-                        synced = await tree.sync(guild=guild)
+            
+            synced = await tree.sync(guild=guild)
             print(f'✅ Synced {len(synced)} commands to guild: {guild.name} ({guild.id})')
         except Exception as e:
             print(f'❌ Sync failed for {guild.name}: {e}')
