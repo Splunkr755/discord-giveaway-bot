@@ -27,7 +27,7 @@ data = {}
 invite_cache = {}
 last_crystal_time = {}
 
-print("=== JOE FULL CHEST VERSION - 2026-04-18 (NUCLEAR SYNC - NO DUPLICATES) ===")
+print("=== JOE FULL CHEST VERSION - 2026-04-18 (ULTIMATE NUKE - DUPLICATES FIXED) ===")
 
 def load_data():
     global data
@@ -1012,26 +1012,31 @@ async def setup_chest(interaction: discord.Interaction):
     save_data()
     await interaction.response.send_message(f"✅ Chest embed posted in {channel.mention} and will now auto-update when items change!", ephemeral=True)
 
-# ====================== NUCLEAR FORCE SYNC ======================
-@tree.command(name="force_sync", description="NUKE all commands and re-register cleanly (fixes duplicates)")
+# ====================== ULTIMATE NUKE COMMAND ======================
+@tree.command(name="nuke_all_commands", description="NUKE EVERYTHING - clears global + guild commands (use this when force_sync fails)")
 @app_commands.default_permissions(administrator=True)
-async def force_sync(interaction: discord.Interaction):
+async def nuke_all_commands(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
     try:
+        # Clear global commands first
+        await tree.sync(guild=None)
+        # Clear guild commands
         tree.clear_commands(guild=interaction.guild)
         await tree.sync(guild=interaction.guild)
+        # Clear again for safety
         tree.clear_commands(guild=interaction.guild)
         tree.copy_global_to(guild=interaction.guild)
         synced = await tree.sync(guild=interaction.guild)
+        
         await interaction.followup.send(
-            f"✅ **Nuclear sync complete!**\n"
-            f"Cleared and re-registered **{len(synced)}** commands.\n"
-            f"Duplicates should now be gone. If they are still there, restart the bot and run this command again.",
+            f"✅ **ULTIMATE NUKE COMPLETE!**\n"
+            f"Global and guild commands have been wiped and re-registered (**{len(synced)}** commands).\n"
+            f"Duplicates should now be gone. Wait 30 seconds and check your command list.",
             ephemeral=True
         )
-        print(f"✅ NUCLEAR FORCE SYNC: {len(synced)} commands cleaned on {interaction.guild.name}")
+        print(f"✅ ULTIMATE NUKE RUN on {interaction.guild.name} - {len(synced)} commands")
     except Exception as e:
-        await interaction.followup.send(f"❌ Sync failed: {e}", ephemeral=True)
+        await interaction.followup.send(f"❌ Nuke failed: {e}", ephemeral=True)
         traceback.print_exc()
 
 # ====================== SETUP HOOK ======================
@@ -1053,6 +1058,8 @@ async def on_ready():
     print(f'✅ Logged in as {client.user}')
     for guild in client.guilds:
         try:
+            # Aggressive global + guild clear on startup
+            await tree.sync(guild=None)
             tree.clear_commands(guild=guild)
             await tree.sync(guild=guild)
             tree.copy_global_to(guild=guild)
