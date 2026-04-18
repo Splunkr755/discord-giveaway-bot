@@ -27,7 +27,7 @@ data = {}
 invite_cache = {}
 last_crystal_time = {}
 
-print("=== JOE FULL CHEST VERSION - 2026-04-18 (STRONGEST NUKE - FINAL CLEAN) ===")
+print("=== JOE FULL CHEST VERSION - 2026-04-18 (EXCLUDE COMMANDS RESTORED) ===")
 
 def load_data():
     global data
@@ -587,6 +587,85 @@ async def remove_tickets(interaction: discord.Interaction, member: discord.Membe
     save_data()
     await interaction.response.send_message(f"✅ Removed **{amount}** tickets from {member.mention}. They now have **{tickets_dict[uid]}** tickets.", ephemeral=True)
 
+# ====================== EXCLUDED CHANNEL COMMANDS (RESTORED) ======================
+@tree.command(name="add_excluded_channel", description="Add a channel to ticket exclusion list")
+@app_commands.describe(channel="Channel that should not give tickets")
+@app_commands.default_permissions(administrator=True)
+async def add_excluded_channel(interaction: discord.Interaction, channel: discord.TextChannel):
+    guild_data = get_guild_data(interaction.guild.id)
+    cid = str(channel.id)
+    if cid in guild_data["excluded_channels"]:
+        await interaction.response.send_message(f"❌ {channel.mention} is already excluded from ticket gains.", ephemeral=True)
+        return
+    guild_data["excluded_channels"].append(cid)
+    save_data()
+    await interaction.response.send_message(f"✅ {channel.mention} will no longer give tickets.", ephemeral=True)
+
+@tree.command(name="remove_excluded_channel", description="Remove a channel from ticket exclusion list")
+@app_commands.describe(channel="Channel to remove from exclusion")
+@app_commands.default_permissions(administrator=True)
+async def remove_excluded_channel(interaction: discord.Interaction, channel: discord.TextChannel):
+    guild_data = get_guild_data(interaction.guild.id)
+    cid = str(channel.id)
+    if cid not in guild_data["excluded_channels"]:
+        await interaction.response.send_message(f"❌ {channel.mention} is not in the excluded list.", ephemeral=True)
+        return
+    guild_data["excluded_channels"].remove(cid)
+    save_data()
+    await interaction.response.send_message(f"✅ {channel.mention} can now give tickets again.", ephemeral=True)
+
+@tree.command(name="add_crystal_excluded_channel", description="Add a channel to crystal exclusion list")
+@app_commands.describe(channel="Channel that should not give crystals")
+@app_commands.default_permissions(administrator=True)
+async def add_crystal_excluded_channel(interaction: discord.Interaction, channel: discord.TextChannel):
+    guild_data = get_guild_data(interaction.guild.id)
+    cid = str(channel.id)
+    if cid in guild_data["crystal_excluded_channels"]:
+        await interaction.response.send_message(f"❌ {channel.mention} is already excluded from crystal gains.", ephemeral=True)
+        return
+    guild_data["crystal_excluded_channels"].append(cid)
+    save_data()
+    await interaction.response.send_message(f"✅ {channel.mention} will no longer give crystals.", ephemeral=True)
+
+@tree.command(name="remove_crystal_excluded_channel", description="Remove a channel from crystal exclusion list")
+@app_commands.describe(channel="Channel to remove from crystal exclusion")
+@app_commands.default_permissions(administrator=True)
+async def remove_crystal_excluded_channel(interaction: discord.Interaction, channel: discord.TextChannel):
+    guild_data = get_guild_data(interaction.guild.id)
+    cid = str(channel.id)
+    if cid not in guild_data["crystal_excluded_channels"]:
+        await interaction.response.send_message(f"❌ {channel.mention} is not in the crystal excluded list.", ephemeral=True)
+        return
+    guild_data["crystal_excluded_channels"].remove(cid)
+    save_data()
+    await interaction.response.send_message(f"✅ {channel.mention} can now give crystals again.", ephemeral=True)
+
+@tree.command(name="add_daily_excluded_channel", description="Add a channel to daily reward exclusion list")
+@app_commands.describe(channel="Channel that should not count for daily rewards")
+@app_commands.default_permissions(administrator=True)
+async def add_daily_excluded_channel(interaction: discord.Interaction, channel: discord.TextChannel):
+    guild_data = get_guild_data(interaction.guild.id)
+    cid = str(channel.id)
+    if cid in guild_data["daily_excluded_channels"]:
+        await interaction.response.send_message(f"❌ {channel.mention} is already excluded from daily rewards.", ephemeral=True)
+        return
+    guild_data["daily_excluded_channels"].append(cid)
+    save_data()
+    await interaction.response.send_message(f"✅ {channel.mention} will no longer count toward daily chat rewards.", ephemeral=True)
+
+@tree.command(name="remove_daily_excluded_channel", description="Remove a channel from daily reward exclusion list")
+@app_commands.describe(channel="Channel to remove from daily exclusion")
+@app_commands.default_permissions(administrator=True)
+async def remove_daily_excluded_channel(interaction: discord.Interaction, channel: discord.TextChannel):
+    guild_data = get_guild_data(interaction.guild.id)
+    cid = str(channel.id)
+    if cid not in guild_data["daily_excluded_channels"]:
+        await interaction.response.send_message(f"❌ {channel.mention} is not in the daily excluded list.", ephemeral=True)
+        return
+    guild_data["daily_excluded_channels"].remove(cid)
+    save_data()
+    await interaction.response.send_message(f"✅ {channel.mention} can now count toward daily chat rewards again.", ephemeral=True)
+
 # ====================== ROLE BONUS COMMANDS ======================
 @tree.command(name="add_role_bonus", description="Add ticket bonus for a role")
 @app_commands.describe(role="Role to give bonus tickets", amount="Extra tickets")
@@ -787,7 +866,101 @@ async def create_free_giveaway(interaction: discord.Interaction, prize_tickets: 
     await refresh_giveaway_embed(msg, guild_data["giveaways"][str(msg.id)])
     await interaction.followup.send(f"✅ Free giveaway created in {send_channel.mention}!", ephemeral=True)
 
-# ====================== ROLE / CHEST / DAILY / SETUP COMMANDS ======================
+# ====================== CHEST COMMANDS ======================
+@tree.command(name="add_chest_item", description="Add a reward to the chest loot table")
+@app_commands.describe(
+    name="Name of the reward",
+    crystal_prize="Crystals awarded (0 = none)",
+    ticket_prize="Tickets awarded (0 = none)",
+    custom_prize="Custom prize text (e.g. VIP Role 7 days, Special Shoutout)",
+    chance="Drop chance (0.0 - 1.0)"
+)
+async def add_chest_item(interaction: discord.Interaction, name: str, crystal_prize: int = 0, ticket_prize: int = 0, custom_prize: str = None, chance: float = 0.0):
+    guild_data = get_guild_data(interaction.guild.id)
+    manager_role_id = guild_data.get("chest_manager_role")
+    is_manager = manager_role_id is None or any(str(r.id) == manager_role_id for r in interaction.user.roles)
+    if not is_manager and not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message("❌ You do not have permission to add chest items!", ephemeral=True)
+        return
+    if name in guild_data["chest_items"]:
+        await interaction.response.send_message("❌ An item with this name already exists!", ephemeral=True)
+        return
+    if chance <= 0 or chance > 1:
+        await interaction.response.send_message("❌ Chance must be between 0.0 and 1.0!", ephemeral=True)
+        return
+    if crystal_prize < 0 or ticket_prize < 0:
+        await interaction.response.send_message("❌ Prizes cannot be negative!", ephemeral=True)
+        return
+    guild_data["chest_items"][name] = {
+        "name": name,
+        "crystal_prize": crystal_prize,
+        "ticket_prize": ticket_prize,
+        "custom_prize": custom_prize,
+        "chance": chance
+    }
+    save_data()
+    await interaction.response.send_message(f"✅ Added **{name}** to the chest loot table (chance: {chance*100:.1f}%)", ephemeral=True)
+    await refresh_chest_embed(interaction.guild)
+
+@tree.command(name="remove_chest_item", description="Remove a reward from the chest loot table")
+@app_commands.describe(name="Name of the item to remove")
+async def remove_chest_item(interaction: discord.Interaction, name: str):
+    guild_data = get_guild_data(interaction.guild.id)
+    manager_role_id = guild_data.get("chest_manager_role")
+    is_manager = manager_role_id is None or any(str(r.id) == manager_role_id for r in interaction.user.roles)
+    if not is_manager and not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message("❌ You do not have permission to remove chest items!", ephemeral=True)
+        return
+
+    if name not in guild_data["chest_items"]:
+        await interaction.response.send_message(f"❌ No item named **{name}** found in the chest.", ephemeral=True)
+        return
+
+    del guild_data["chest_items"][name]
+    save_data()
+
+    await interaction.response.send_message(f"✅ Removed **{name}** from the chest loot table.", ephemeral=True)
+    await refresh_chest_embed(interaction.guild)
+
+@tree.command(name="setup_chest", description="Post the persistent chest embed with full loot table")
+@app_commands.default_permissions(administrator=True)
+async def setup_chest(interaction: discord.Interaction):
+    guild_data = get_guild_data(interaction.guild.id)
+    if not guild_data.get("chest_channel_id"):
+        await interaction.response.send_message("❌ Set a chest channel first with /set_chest_channel!", ephemeral=True)
+        return
+    channel = interaction.guild.get_channel(int(guild_data["chest_channel_id"]))
+    if not channel:
+        await interaction.response.send_message("❌ Chest channel not found!", ephemeral=True)
+        return
+    items = guild_data.get("chest_items", {})
+    loot_desc = "**What you can win:**\n"
+    if items:
+        for name, data in items.items():
+            rewards = []
+            if data.get("crystal_prize", 0) > 0:
+                rewards.append(f"{data['crystal_prize']} crystals")
+            if data.get("ticket_prize", 0) > 0:
+                rewards.append(f"{data['ticket_prize']} tickets")
+            if data.get("custom_prize"):
+                rewards.append(data["custom_prize"])
+            chance = data.get("chance", 0) * 100
+            loot_desc += f"• **{name}** — {', '.join(rewards) or 'Nothing'} ({chance:.1f}%)\n"
+    else:
+        loot_desc += "No items added yet!\n"
+    embed = discord.Embed(
+        title="🎁 Server Chests",
+        description=f"Open a chest for **{guild_data.get('chest_open_cost', 50)} crystals**!\n\n{loot_desc}",
+        color=0xff00ff
+    )
+    embed.set_footer(text="Click 'Open Chest' below • Rewards are private (ephemeral)")
+    view = ChestView()
+    msg = await channel.send(embed=embed, view=view)
+    guild_data["chest_message_id"] = str(msg.id)
+    save_data()
+    await interaction.response.send_message(f"✅ Chest embed posted in {channel.mention} and will now auto-update when items change!", ephemeral=True)
+
+# ====================== REST OF THE SETUP & EVENTS ======================
 @tree.command(name="set_giveaway_host_role", description="Set the role required to host giveaways (Admins only)")
 @app_commands.describe(role="Role that can host giveaways (leave empty to remove restriction)")
 @app_commands.default_permissions(administrator=True)
@@ -939,93 +1112,18 @@ async def set_special_reward_channel(interaction: discord.Interaction, channel: 
     save_data()
     await interaction.response.send_message(f"✅ Special reward announcement channel set to {channel.mention}!", ephemeral=True)
 
-@tree.command(name="add_chest_item", description="Add a reward to the chest loot table")
-@app_commands.describe(
-    name="Name of the reward",
-    crystal_prize="Crystals awarded (0 = none)",
-    ticket_prize="Tickets awarded (0 = none)",
-    custom_prize="Custom prize text (e.g. VIP Role 7 days, Special Shoutout)",
-    chance="Drop chance (0.0 - 1.0)"
-)
-async def add_chest_item(interaction: discord.Interaction, name: str, crystal_prize: int = 0, ticket_prize: int = 0, custom_prize: str = None, chance: float = 0.0):
-    guild_data = get_guild_data(interaction.guild.id)
-    manager_role_id = guild_data.get("chest_manager_role")
-    is_manager = manager_role_id is None or any(str(r.id) == manager_role_id for r in interaction.user.roles)
-    if not is_manager and not interaction.user.guild_permissions.administrator:
-        await interaction.response.send_message("❌ You do not have permission to add chest items!", ephemeral=True)
-        return
-    if name in guild_data["chest_items"]:
-        await interaction.response.send_message("❌ An item with this name already exists!", ephemeral=True)
-        return
-    if chance <= 0 or chance > 1:
-        await interaction.response.send_message("❌ Chance must be between 0.0 and 1.0!", ephemeral=True)
-        return
-    if crystal_prize < 0 or ticket_prize < 0:
-        await interaction.response.send_message("❌ Prizes cannot be negative!", ephemeral=True)
-        return
-    guild_data["chest_items"][name] = {
-        "name": name,
-        "crystal_prize": crystal_prize,
-        "ticket_prize": ticket_prize,
-        "custom_prize": custom_prize,
-        "chance": chance
-    }
-    save_data()
-    await interaction.response.send_message(f"✅ Added **{name}** to the chest loot table (chance: {chance*100:.1f}%)", ephemeral=True)
-    await refresh_chest_embed(interaction.guild)
-
-@tree.command(name="setup_chest", description="Post the persistent chest embed with full loot table")
-@app_commands.default_permissions(administrator=True)
-async def setup_chest(interaction: discord.Interaction):
-    guild_data = get_guild_data(interaction.guild.id)
-    if not guild_data.get("chest_channel_id"):
-        await interaction.response.send_message("❌ Set a chest channel first with /set_chest_channel!", ephemeral=True)
-        return
-    channel = interaction.guild.get_channel(int(guild_data["chest_channel_id"]))
-    if not channel:
-        await interaction.response.send_message("❌ Chest channel not found!", ephemeral=True)
-        return
-    items = guild_data.get("chest_items", {})
-    loot_desc = "**What you can win:**\n"
-    if items:
-        for name, data in items.items():
-            rewards = []
-            if data.get("crystal_prize", 0) > 0:
-                rewards.append(f"{data['crystal_prize']} crystals")
-            if data.get("ticket_prize", 0) > 0:
-                rewards.append(f"{data['ticket_prize']} tickets")
-            if data.get("custom_prize"):
-                rewards.append(data["custom_prize"])
-            chance = data.get("chance", 0) * 100
-            loot_desc += f"• **{name}** — {', '.join(rewards) or 'Nothing'} ({chance:.1f}%)\n"
-    else:
-        loot_desc += "No items added yet!\n"
-    embed = discord.Embed(
-        title="🎁 Server Chests",
-        description=f"Open a chest for **{guild_data.get('chest_open_cost', 50)} crystals**!\n\n{loot_desc}",
-        color=0xff00ff
-    )
-    embed.set_footer(text="Click 'Open Chest' below • Rewards are private (ephemeral)")
-    view = ChestView()
-    msg = await channel.send(embed=embed, view=view)
-    guild_data["chest_message_id"] = str(msg.id)
-    save_data()
-    await interaction.response.send_message(f"✅ Chest embed posted in {channel.mention} and will now auto-update when items change!", ephemeral=True)
-
-# ====================== STRONGEST NUKE COMMANDS ======================
-@tree.command(name="global_nuke", description="Clears ALL global commands (use first if duplicates remain)")
+# ====================== NUKE COMMANDS (for safety) ======================
+@tree.command(name="global_nuke", description="Clears ALL global commands")
 @app_commands.default_permissions(administrator=True)
 async def global_nuke(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
     try:
         await tree.sync(guild=None)
-        await interaction.followup.send("✅ **Global commands cleared.**\nWait 60 seconds, then run /nuke_all_commands.", ephemeral=True)
-        print(f"✅ GLOBAL NUKE executed on {interaction.guild.name}")
+        await interaction.followup.send("✅ Global commands cleared.", ephemeral=True)
     except Exception as e:
-        await interaction.followup.send(f"❌ Global nuke failed: {e}", ephemeral=True)
-        traceback.print_exc()
+        await interaction.followup.send(f"❌ Failed: {e}", ephemeral=True)
 
-@tree.command(name="nuke_all_commands", description="ULTIMATE NUKE - clears global + guild commands")
+@tree.command(name="nuke_all_commands", description="ULTIMATE NUKE - clears everything")
 @app_commands.default_permissions(administrator=True)
 async def nuke_all_commands(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
@@ -1035,16 +1133,9 @@ async def nuke_all_commands(interaction: discord.Interaction):
         await tree.sync(guild=interaction.guild)
         tree.copy_global_to(guild=interaction.guild)
         synced = await tree.sync(guild=interaction.guild)
-        await interaction.followup.send(
-            f"✅ **ULTIMATE NUKE COMPLETE!**\n"
-            f"Global + guild commands wiped and re-registered (**{len(synced)}** commands).\n"
-            f"Wait 2 full minutes and check your slash command list.",
-            ephemeral=True
-        )
-        print(f"✅ ULTIMATE NUKE RUN on {interaction.guild.name} - {len(synced)} commands")
+        await interaction.followup.send(f"✅ Ultimate nuke complete! {len(synced)} commands re-registered.", ephemeral=True)
     except Exception as e:
-        await interaction.followup.send(f"❌ Nuke failed: {e}", ephemeral=True)
-        traceback.print_exc()
+        await interaction.followup.send(f"❌ Failed: {e}", ephemeral=True)
 
 # ====================== SETUP HOOK ======================
 async def setup_hook():
