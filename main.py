@@ -1,5 +1,6 @@
 import discord
 from discord import app_commands
+from discord.abc import GuildChannel  # ← added for clean channel type
 import random
 import json
 import os
@@ -26,7 +27,7 @@ data = {}
 invite_cache = {}
 last_crystal_time = {}
 
-print("=== JOE FULL CHEST VERSION - 2026-04-18 (POLISHED CHEST - NO TRUNCATION) ===")
+print("=== JOE FULL CHEST VERSION - 2026-04-18 (CRYSTAL EXCLUSIONS + FORUM SUPPORT - CLEANED) ===")
 
 def load_data():
     global data
@@ -48,8 +49,8 @@ def get_guild_data(guild_id):
         data["guilds"][gid] = {
             "tickets": {}, "chest_open_cost": 50, "role_bonuses": {},
             "role_chance_bonuses": {}, "ticket_channel": None, "excluded_channels": [],
-            "gifting_enabled": True, "giveaways": {}, "ticket_chance": 0.25,
-            "giveaway_host_role": None, "giveaway_blacklist_roles": [],
+            "crystal_excluded_channels": [], "gifting_enabled": True, "giveaways": {},
+            "ticket_chance": 0.25, "giveaway_host_role": None, "giveaway_blacklist_roles": [],
             "ticket_mod_role": None, "shop_items": {}, "shop_manager_role": None,
             "invite_reward": 0, "seen_members": [], "daily_chat_reward": {
                 "channel_id": None, "reward": 0, "winners": 3, "time": "18:00",
@@ -57,12 +58,13 @@ def get_guild_data(guild_id):
             }, "daily_entries": {}, "crystal_cooldown": 60,
             "chest_manager_role": None, "chest_items": {},
             "chest_channel_id": None, "special_reward_channel_id": None,
-            "crystals": {}
+            "crystals": {}, "chest_message_id": None
         }
     else:
         gd = data["guilds"][gid]
         if "role_chance_bonuses" not in gd: gd["role_chance_bonuses"] = {}
         if "excluded_channels" not in gd: gd["excluded_channels"] = []
+        if "crystal_excluded_channels" not in gd: gd["crystal_excluded_channels"] = []
         if "gifting_enabled" not in gd: gd["gifting_enabled"] = True
         if "giveaways" not in gd: gd["giveaways"] = {}
         if "ticket_chance" not in gd: gd["ticket_chance"] = 0.25
@@ -81,6 +83,7 @@ def get_guild_data(guild_id):
         if "chest_channel_id" not in gd: gd["chest_channel_id"] = None
         if "special_reward_channel_id" not in gd: gd["special_reward_channel_id"] = None
         if "crystals" not in gd: gd["crystals"] = {}
+        if "chest_message_id" not in gd: gd["chest_message_id"] = None
     return data["guilds"][gid]
 
 # ====================== VIEWS & MODALS ======================
@@ -224,13 +227,11 @@ class ChestView(discord.ui.View):
 
         save_data()
 
-        # EPHEMERAL reward message - only the opener sees this
         await interaction.response.send_message(
             f"🎉 You opened the chest and got **{won_name}** → {reward_text or 'nothing'}!",
             ephemeral=True
         )
 
-        # Rare win public announcement (still goes to special channel)
         if won.get("chance", 0) <= 0.001 and guild_data.get("special_reward_channel_id"):
             ch = interaction.guild.get_channel(int(guild_data["special_reward_channel_id"]))
             if ch:
@@ -304,6 +305,49 @@ async def refresh_giveaway_embed(message: discord.Message, giveaway: dict):
         embed.set_image(url=giveaway["image_url"])
     await message.edit(embed=embed)
 
+# ====================== CHEST EMBED AUTO-UPDATE ======================
+async def refresh_chest_embed(guild: discord.Guild):
+    guild_data = get_guild_data(guild.id)
+    if not guild_data.get("chest_channel_id") or not guild_data.get("chest_message_id"):
+        return
+    channel = guild.get_channel(int(guild_data["chest_channel_id"]))
+    if not channel:
+        return
+    try:
+        message = await channel.fetch_message(int(guild_data["chest_message_id"]))
+    except discord.NotFound:
+        guild_data["chest_message_id"] = None
+        save_data()
+        return
+    except:
+        return
+
+    items = guild_data.get("chest_items", {})
+    loot_desc = "**What you can win:**\n"
+    if items:
+        for name, data in items.items():
+            rewards = []
+            if data.get("crystal_prize", 0) > 0:
+                rewards.append(f"{data['crystal_prize']} crystals")
+            if data.get("ticket_prize", 0) > 0:
+                rewards.append(f"{data['ticket_prize']} tickets")
+            if data.get("custom_prize"):
+                rewards.append(data["custom_prize"])
+            chance = data.get("chance", 0) * 100
+            loot_desc += f"• **{name}** — {', '.join(rewards) or 'Nothing'} ({chance:.1f}%)\n"
+    else:
+        loot_desc += "No items added yet!\n"
+
+    embed = discord.Embed(
+        title="🎁 Server Chests",
+        description=f"Open a chest for **{guild_data.get('chest_open_cost', 50)} crystals**!\n\n{loot_desc}",
+        color=0xff00ff
+    )
+    embed.set_footer(text="Click 'Open Chest' below • Rewards are private (ephemeral)")
+
+    view = ChestView()
+    await message.edit(embed=embed, view=view)
+
 # ====================== HELPERS ======================
 def parse_duration(duration_str: str) -> int:
     duration_str = duration_str.lower().strip()
@@ -319,42 +363,18 @@ def parse_duration(duration_str: str) -> int:
         else: total += amount
     return total if total > 0 else 300
 
-async def finish_giveaway(guild: discord.Guild, message_id: str, refund: bool = False):
-    guild_data = get_guild_data(guild.id)
-    if message_id not in guild_data["giveaways"]:
-        return
-    giveaway = guild_data["giveaways"][message_id]
-    entries = giveaway.get("entries", {})
-    channel = guild.get_channel(int(giveaway["channel_id"]))
-    if not channel:
-        del guild_data["giveaways"][message_id]
-        save_data()
-        return
-    if refund:
-        tickets_dict = guild_data.setdefault("tickets", {})
-        for uid, count in entries.items():
-            tickets_dict[uid] = tickets_dict.get(uid, 0) + count
-        await channel.send("❌ **Giveaway cancelled** — all tickets have been refunded!")
-    else:
-        if not entries:
-            await channel.send("🎟️ Giveaway ended — nobody entered 😢")
-        else:
-            all_entries = []
-            for uid, count in entries.items():
-                all_entries.extend([uid] * count)
-            num_winners = min(giveaway["winners"], len(all_entries))
-            winners = random.sample(all_entries, num_winners)
-            winner_mentions = ", ".join(f"<@{w}>" for w in winners)
-            if giveaway.get("is_free"):
-                prize = giveaway.get("prize_tickets", 0)
-                tickets_dict = guild_data.setdefault("tickets", {})
-                for w in winners:
-                    tickets_dict[w] = tickets_dict.get(w, 0) + prize
-                await channel.send(f"🎉 **GIVEAWAY ENDED!**\n**Prize:** {prize} tickets each\n**Winners:** {winner_mentions}\nCongrats! 🎟️")
-            else:
-                await channel.send(f"🎉 **GIVEAWAY ENDED!**\n**Prize:** {giveaway['prize']}\n**Winners:** {winner_mentions}\nCongrats! 🎟️")
-    del guild_data["giveaways"][message_id]
-    save_data()
+def is_channel_excluded(message, excluded_list):
+    if not excluded_list:
+        return False
+    cid = str(message.channel.id)
+    if cid in excluded_list:
+        return True
+    # Handle threads inside forums
+    if hasattr(message.channel, "parent") and message.channel.parent:
+        parent_id = str(message.channel.parent.id)
+        if parent_id in excluded_list:
+            return True
+    return False
 
 # ====================== BACKGROUND TASKS ======================
 async def giveaway_checker(client):
@@ -424,7 +444,94 @@ async def daily_chat_checker(client):
                 guild_data["daily_entries"] = {}
                 save_data()
 
-# ====================== NEW COMMANDS ======================
+async def finish_giveaway(guild: discord.Guild, message_id: str, refund: bool = False):
+    guild_data = get_guild_data(guild.id)
+    if message_id not in guild_data["giveaways"]:
+        return
+    giveaway = guild_data["giveaways"][message_id]
+    entries = giveaway.get("entries", {})
+    channel = guild.get_channel(int(giveaway["channel_id"]))
+    if not channel:
+        del guild_data["giveaways"][message_id]
+        save_data()
+        return
+    if refund:
+        tickets_dict = guild_data.setdefault("tickets", {})
+        for uid, count in entries.items():
+            tickets_dict[uid] = tickets_dict.get(uid, 0) + count
+        await channel.send("❌ **Giveaway cancelled** — all tickets have been refunded!")
+    else:
+        if not entries:
+            await channel.send("🎟️ Giveaway ended — nobody entered 😢")
+        else:
+            all_entries = []
+            for uid, count in entries.items():
+                all_entries.extend([uid] * count)
+            num_winners = min(giveaway["winners"], len(all_entries))
+            winners = random.sample(all_entries, num_winners)
+            winner_mentions = ", ".join(f"<@{w}>" for w in winners)
+            if giveaway.get("is_free"):
+                prize = giveaway.get("prize_tickets", 0)
+                tickets_dict = guild_data.setdefault("tickets", {})
+                for w in winners:
+                    tickets_dict[w] = tickets_dict.get(w, 0) + prize
+                await channel.send(f"🎉 **GIVEAWAY ENDED!**\n**Prize:** {prize} tickets each\n**Winners:** {winner_mentions}\nCongrats! 🎟️")
+            else:
+                await channel.send(f"🎉 **GIVEAWAY ENDED!**\n**Prize:** {giveaway['prize']}\n**Winners:** {winner_mentions}\nCongrats! 🎟️")
+    del guild_data["giveaways"][message_id]
+    save_data()
+
+# ====================== EXCLUSION COMMANDS (now using general GuildChannel) ======================
+@tree.command(name="add_crystal_excluded_channel", description="Exclude a channel (or forum) from crystal earning")
+@app_commands.describe(channel="Channel or forum to exclude from crystals")
+@app_commands.default_permissions(administrator=True)
+async def add_crystal_excluded_channel(interaction: discord.Interaction, channel: GuildChannel):
+    guild_data = get_guild_data(interaction.guild.id)
+    cid = str(channel.id)
+    if cid in guild_data["crystal_excluded_channels"]:
+        await interaction.response.send_message(f"❌ {channel.mention} is already excluded from crystal earning.", ephemeral=True)
+        return
+    guild_data["crystal_excluded_channels"].append(cid)
+    save_data()
+    await interaction.response.send_message(f"✅ {channel.mention} is now **excluded from crystal earning**.\n(Threads inside forums are also excluded)", ephemeral=True)
+
+@tree.command(name="remove_crystal_excluded_channel", description="Remove a channel from crystal exclusion")
+@app_commands.describe(channel="Channel or forum to remove from exclusion")
+@app_commands.default_permissions(administrator=True)
+async def remove_crystal_excluded_channel(interaction: discord.Interaction, channel: GuildChannel):
+    guild_data = get_guild_data(interaction.guild.id)
+    cid = str(channel.id)
+    if cid in guild_data["crystal_excluded_channels"]:
+        guild_data["crystal_excluded_channels"].remove(cid)
+        save_data()
+        await interaction.response.send_message(f"✅ {channel.mention} is no longer excluded from crystal earning.", ephemeral=True)
+    else:
+        await interaction.response.send_message(f"❌ {channel.mention} was not in the crystal exclusion list.", ephemeral=True)
+
+@tree.command(name="list_excluded_channels", description="List all excluded channels (tickets + crystals)")
+@app_commands.default_permissions(administrator=True)
+async def list_excluded_channels(interaction: discord.Interaction):
+    guild_data = get_guild_data(interaction.guild.id)
+    ticket_ex = guild_data.get("excluded_channels", [])
+    crystal_ex = guild_data.get("crystal_excluded_channels", [])
+
+    embed = discord.Embed(title="🚫 Excluded Channels", color=0xff0000)
+
+    if ticket_ex:
+        ticket_list = "\n".join([f"<#{cid}>" for cid in ticket_ex])
+        embed.add_field(name="🎟️ Ticket Farming Excluded", value=ticket_list or "None", inline=False)
+    else:
+        embed.add_field(name="🎟️ Ticket Farming Excluded", value="None", inline=False)
+
+    if crystal_ex:
+        crystal_list = "\n".join([f"<#{cid}>" for cid in crystal_ex])
+        embed.add_field(name="💎 Crystal Earning Excluded", value=crystal_list or "None", inline=False)
+    else:
+        embed.add_field(name="💎 Crystal Earning Excluded", value="None", inline=False)
+
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+# ====================== ALL OTHER COMMANDS & EVENTS (unchanged) ======================
 @tree.command(name="balance", description="Check your tickets and crystals")
 async def balance(interaction: discord.Interaction):
     guild_data = get_guild_data(interaction.guild.id)
@@ -510,10 +617,10 @@ async def remove_chest_item(interaction: discord.Interaction, name: str):
         del guild_data["chest_items"][name]
         save_data()
         await interaction.response.send_message(f"✅ Removed **{name}** from the chest loot table.", ephemeral=True)
+        await refresh_chest_embed(interaction.guild)
     else:
         await interaction.response.send_message("❌ Item not found.", ephemeral=True)
 
-# ====================== ORIGINAL COMMANDS ======================
 @tree.command(name="create_giveaway", description="Create a new raffle/giveaway (costs tickets to enter)")
 @app_commands.describe(prize="What the winner gets", duration="How long (e.g. 30s, 5m, 1h, 2d)", winners="Number of winners", image="Optional image for the embed", ping_role="Role to ping when the giveaway starts (leave empty for no ping)", channel="Channel to post the giveaway in (leave empty for current channel)")
 @app_commands.default_permissions(administrator=True)
@@ -694,6 +801,7 @@ async def set_chest_open_cost(interaction: discord.Interaction, amount: int):
     guild_data["chest_open_cost"] = amount
     save_data()
     await interaction.response.send_message(f"✅ Opening the chest now costs **{amount}** crystals!", ephemeral=True)
+    await refresh_chest_embed(interaction.guild)
 
 @tree.command(name="set_special_reward_channel", description="Set the channel for rare chest win announcements")
 @app_commands.describe(channel="Channel for rare announcements")
@@ -737,6 +845,7 @@ async def add_chest_item(interaction: discord.Interaction, name: str, crystal_pr
     }
     save_data()
     await interaction.response.send_message(f"✅ Added **{name}** to the chest loot table (chance: {chance*100:.1f}%)", ephemeral=True)
+    await refresh_chest_embed(interaction.guild)
 
 @tree.command(name="setup_chest", description="Post the persistent chest embed with full loot table")
 @app_commands.default_permissions(administrator=True)
@@ -774,8 +883,10 @@ async def setup_chest(interaction: discord.Interaction):
     embed.set_footer(text="Click 'Open Chest' below • Rewards are private (ephemeral)")
 
     view = ChestView()
-    await channel.send(embed=embed, view=view)
-    await interaction.response.send_message(f"✅ Chest embed posted in {channel.mention}!", ephemeral=True)
+    msg = await channel.send(embed=embed, view=view)
+    guild_data["chest_message_id"] = str(msg.id)
+    save_data()
+    await interaction.response.send_message(f"✅ Chest embed posted in {channel.mention} and will now auto-update when items change!", ephemeral=True)
 
 @tree.command(name="force_sync", description="Force sync all commands to this server (Admin only)")
 @app_commands.default_permissions(administrator=True)
@@ -861,32 +972,42 @@ async def on_member_join(member):
 async def on_message(message: discord.Message):
     if message.author.bot or not message.guild:
         return
+
     guild_data = get_guild_data(message.guild.id)
-    if str(message.channel.id) in guild_data.get("excluded_channels", []):
+
+    # Ticket farming exclusion
+    if is_channel_excluded(message, guild_data.get("excluded_channels", [])):
+        daily = guild_data.get("daily_chat_reward", {})
+        if daily.get("channel_id") and str(message.channel.id) == daily["channel_id"]:
+            entries = guild_data.setdefault("daily_entries", {})
+            uid = str(message.author.id)
+            entries[uid] = entries.get(uid, 0) + 1
+            save_data()
         return
-    # Daily chat reward counting
+
+    # Crystal earning exclusion
+    if not is_channel_excluded(message, guild_data.get("crystal_excluded_channels", [])):
+        user_id = str(message.author.id)
+        now = datetime.datetime.now().timestamp()
+        cooldown = guild_data.get("crystal_cooldown", 60)
+        if user_id not in last_crystal_time or now - last_crystal_time[user_id] >= cooldown:
+            length = len(message.content)
+            crystals_gained = 5 if length < 10 else 10 + (length // 15)
+            crystals_gained = min(crystals_gained, 40)
+            guild_data.setdefault("crystals", {})[user_id] = guild_data["crystals"].get(user_id, 0) + crystals_gained
+            last_crystal_time[user_id] = now
+            save_data()
+            print(f"💎 {message.author} earned {crystals_gained} crystals (message length: {length})")
+
+    # Daily chat reward (always runs)
     daily = guild_data.get("daily_chat_reward", {})
     if daily.get("channel_id") and str(message.channel.id) == daily["channel_id"]:
         entries = guild_data.setdefault("daily_entries", {})
         uid = str(message.author.id)
         entries[uid] = entries.get(uid, 0) + 1
         save_data()
-    # Crystal earning - IMPROVED SCALING (base 10 + length scaling)
-    user_id = str(message.author.id)
-    now = datetime.datetime.now().timestamp()
-    cooldown = guild_data.get("crystal_cooldown", 60)
-    if user_id not in last_crystal_time or now - last_crystal_time[user_id] >= cooldown:
-        length = len(message.content)
-        if length < 10:
-            crystals_gained = 5
-        else:
-            crystals_gained = 10 + (length // 15)
-        crystals_gained = min(crystals_gained, 40)
-        guild_data.setdefault("crystals", {})[user_id] = guild_data["crystals"].get(user_id, 0) + crystals_gained
-        last_crystal_time[user_id] = now
-        save_data()
-        print(f"💎 {message.author} earned {crystals_gained} crystals (message length: {length})")
-    # Regular ticket farming
+
+    # Ticket farming
     role_bonuses = guild_data.get("role_bonuses", {})
     role_chance_bonuses = guild_data.get("role_chance_bonuses", {})
     extra_tickets = 0
@@ -897,6 +1018,7 @@ async def on_message(message: discord.Message):
             extra_tickets += role_bonuses[rid]
         if rid in role_chance_bonuses:
             extra_chance += role_chance_bonuses[rid]
+
     base_chance = guild_data.get("ticket_chance", 0.25)
     total_chance = base_chance + extra_chance
     tickets_won = 0
@@ -905,6 +1027,7 @@ async def on_message(message: discord.Message):
         if random.random() < min(chance, 1.0):
             tickets_won += 1
         chance -= 1.0
+
     if tickets_won > 0:
         total_tickets = tickets_won + extra_tickets
         tickets_dict = guild_data.setdefault("tickets", {})
@@ -913,6 +1036,7 @@ async def on_message(message: discord.Message):
         new_total = current + total_tickets
         tickets_dict[user_id_str] = new_total
         save_data()
+
         ticket_channel_id = guild_data.get("ticket_channel")
         announcement_channel = message.channel
         if ticket_channel_id:
