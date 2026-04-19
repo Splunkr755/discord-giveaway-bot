@@ -22,7 +22,7 @@ DATA_FILE = "/data/bot_data.json"
 data = {}
 invite_cache = {}
 last_crystal_time = {}
-print("=== JOE FULL CHEST VERSION - 2026-04-18 (AUTOMATIC CUSTOM PRIZE ANNOUNCEMENTS + SEPARATE CHANNEL COMMAND) ===")
+print("=== JOE FULL CHEST VERSION - 2026-04-18 (AUTOMATIC CUSTOM PRIZE ANNOUNCEMENTS + SEPARATE CHANNEL COMMAND + ADD/REMOVE CRYSTALS + INVITE CRYSTALS) ===")
 def load_data():
     global data
     if os.path.exists(DATA_FILE):
@@ -45,7 +45,8 @@ def get_guild_data(guild_id):
             "gifting_enabled": True, "giveaways": {}, "ticket_chance": 0.25,
             "crystal_chance": 1.0, "giveaway_host_role": None, "giveaway_blacklist_roles": [],
             "ticket_mod_role": None, "shop_items": {}, "shop_manager_role": None,
-            "invite_reward": 0, "seen_members": [], "daily_chat_reward": {
+            "invite_reward": 0, "invite_crystal_reward": 0, "seen_members": [], 
+            "daily_chat_reward": {
                 "announcement_channel_id": None, "winners": 3, "time": "18:00",
                 "tickets_reward": 0, "crystals_reward": 0, "custom_prize": None,
                 "reward_display": "Daily Chat Rewards"
@@ -71,6 +72,7 @@ def get_guild_data(guild_id):
         if "shop_items" not in gd: gd["shop_items"] = {}
         if "shop_manager_role" not in gd: gd["shop_manager_role"] = None
         if "invite_reward" not in gd: gd["invite_reward"] = 0
+        if "invite_crystal_reward" not in gd: gd["invite_crystal_reward"] = 0
         if "seen_members" not in gd: gd["seen_members"] = []
         if "daily_chat_reward" not in gd: gd["daily_chat_reward"] = {"announcement_channel_id": None, "winners": 3, "time": "18:00", "tickets_reward": 0, "crystals_reward": 0, "custom_prize": None, "reward_display": "Daily Chat Rewards"}
         if "daily_entries" not in gd: gd["daily_entries"] = {}
@@ -499,7 +501,7 @@ async def finish_giveaway(guild: discord.Guild, message_id: str, refund: bool = 
                 await channel.send(f"🎉 **GIVEAWAY ENDED!**\n**Prize:** {giveaway['prize']}\n**Winners:** {winner_mentions}\nCongrats! 🎟️")
     del guild_data["giveaways"][message_id]
     save_data()
-# ====================== TICKET MANAGEMENT COMMANDS ======================
+# ====================== TICKET & CRYSTAL MANAGEMENT COMMANDS ======================
 @tree.command(name="add_tickets", description="Give tickets to a user (Mod role only)")
 @app_commands.describe(member="User to give tickets to", amount="Number of tickets")
 @app_commands.default_permissions(administrator=True)
@@ -517,6 +519,7 @@ async def add_tickets(interaction: discord.Interaction, member: discord.Member, 
     tickets_dict[uid] = tickets_dict.get(uid, 0) + amount
     save_data()
     await interaction.response.send_message(f"✅ Gave **{amount}** tickets to {member.mention}. They now have **{tickets_dict[uid]}** tickets.", ephemeral=True)
+
 @tree.command(name="remove_tickets", description="Remove tickets from a user (Mod role only)")
 @app_commands.describe(member="User to remove tickets from", amount="Number of tickets")
 @app_commands.default_permissions(administrator=True)
@@ -535,6 +538,43 @@ async def remove_tickets(interaction: discord.Interaction, member: discord.Membe
     tickets_dict[uid] = max(0, current - amount)
     save_data()
     await interaction.response.send_message(f"✅ Removed **{amount}** tickets from {member.mention}. They now have **{tickets_dict[uid]}** tickets.", ephemeral=True)
+
+@tree.command(name="add_crystals", description="Give crystals to a user (Mod role only)")
+@app_commands.describe(member="User to give crystals to", amount="Number of crystals")
+@app_commands.default_permissions(administrator=True)
+async def add_crystals(interaction: discord.Interaction, member: discord.Member, amount: int):
+    guild_data = get_guild_data(interaction.guild.id)
+    mod_role_id = guild_data.get("ticket_mod_role")
+    if mod_role_id and not any(str(role.id) == mod_role_id for role in interaction.user.roles):
+        await interaction.response.send_message("❌ You need the ticket mod role to use this command!", ephemeral=True)
+        return
+    if amount < 1:
+        await interaction.response.send_message("❌ Amount must be at least 1!", ephemeral=True)
+        return
+    crystals_dict = guild_data.setdefault("crystals", {})
+    uid = str(member.id)
+    crystals_dict[uid] = crystals_dict.get(uid, 0) + amount
+    save_data()
+    await interaction.response.send_message(f"✅ Gave **{amount}** crystals to {member.mention}. They now have **{crystals_dict[uid]}** crystals.", ephemeral=True)
+
+@tree.command(name="remove_crystals", description="Remove crystals from a user (Mod role only)")
+@app_commands.describe(member="User to remove crystals from", amount="Number of crystals")
+@app_commands.default_permissions(administrator=True)
+async def remove_crystals(interaction: discord.Interaction, member: discord.Member, amount: int):
+    guild_data = get_guild_data(interaction.guild.id)
+    mod_role_id = guild_data.get("ticket_mod_role")
+    if mod_role_id and not any(str(role.id) == mod_role_id for role in interaction.user.roles):
+        await interaction.response.send_message("❌ You need the ticket mod role to use this command!", ephemeral=True)
+        return
+    if amount < 1:
+        await interaction.response.send_message("❌ Amount must be at least 1!", ephemeral=True)
+        return
+    crystals_dict = guild_data.setdefault("crystals", {})
+    uid = str(member.id)
+    current = crystals_dict.get(uid, 0)
+    crystals_dict[uid] = max(0, current - amount)
+    save_data()
+    await interaction.response.send_message(f"✅ Removed **{amount}** crystals from {member.mention}. They now have **{crystals_dict[uid]}** crystals.", ephemeral=True)
 # ====================== EXCLUDED CHANNEL COMMANDS ======================
 @tree.command(name="add_excluded_channel", description="Add a channel to ticket exclusion list (supports text + forum)")
 @app_commands.describe(channel="Channel to exclude from ticket gains (text or forum)")
@@ -772,7 +812,6 @@ async def my_tickets(interaction: discord.Interaction):
     tickets = guild_data.get("tickets", {}).get(str(interaction.user.id), 0)
     await interaction.response.send_message(f"🎟️ You have **{tickets}** tickets!", ephemeral=True)
 
-# ====================== NEW SHOP COMMAND ADDED HERE ======================
 @tree.command(name="shop", description="Open the server shop to browse items")
 async def shop(interaction: discord.Interaction):
     guild_data = get_guild_data(interaction.guild.id)
@@ -782,7 +821,6 @@ async def shop(interaction: discord.Interaction):
     view = ShopView(guild_data)
     embed = view.get_embed()
     await interaction.response.send_message(embed=embed, view=view)
-# ====================== END OF NEW SHOP COMMAND ======================
 
 @tree.command(name="create_giveaway", description="Create a new raffle/giveaway (costs tickets to enter)")
 @app_commands.describe(
@@ -1006,20 +1044,27 @@ async def set_crystal_cooldown(interaction: discord.Interaction, seconds: int):
     guild_data["crystal_cooldown"] = seconds
     save_data()
     await interaction.response.send_message(f"✅ Crystal cooldown set to **{seconds}** seconds!", ephemeral=True)
-@tree.command(name="set_invite_reward", description="Set how many tickets a user gets for inviting someone (0 to disable)")
-@app_commands.describe(amount="Tickets per successful invite (0 = disabled)")
+@tree.command(name="set_invite_reward", description="Set tickets AND/OR crystals given for successful invites (0 to disable)")
+@app_commands.describe(tickets="Tickets per invite (0 = none)", crystals="Crystals per invite (0 = none)")
 @app_commands.default_permissions(administrator=True)
-async def set_invite_reward(interaction: discord.Interaction, amount: int):
-    if amount < 0:
-        await interaction.response.send_message("❌ Amount cannot be negative!", ephemeral=True)
+async def set_invite_reward(interaction: discord.Interaction, tickets: int = 0, crystals: int = 0):
+    if tickets < 0 or crystals < 0:
+        await interaction.response.send_message("❌ Amounts cannot be negative!", ephemeral=True)
         return
     guild_data = get_guild_data(interaction.guild.id)
-    guild_data["invite_reward"] = amount
+    guild_data["invite_reward"] = tickets
+    guild_data["invite_crystal_reward"] = crystals
     save_data()
-    if amount == 0:
-        await interaction.response.send_message("✅ Invite reward disabled.", ephemeral=True)
+    msg = "✅ Invite rewards updated!\n"
+    if tickets > 0:
+        msg += f"• **{tickets} tickets** per invite\n"
     else:
-        await interaction.response.send_message(f"✅ Users will now receive **{amount}** tickets for every successful invite!", ephemeral=True)
+        msg += "• No tickets\n"
+    if crystals > 0:
+        msg += f"• **{crystals} crystals** per invite"
+    else:
+        msg += "• No crystals"
+    await interaction.response.send_message(msg, ephemeral=True)
 @tree.command(name="set_daily_chat_reward", description="Set up daily chat rewards (global + easy)")
 @app_commands.describe(
     announcement_channel="Channel where the daily info embed will be posted",
@@ -1153,8 +1198,9 @@ async def on_member_join(member):
     if member.bot or not member.guild:
         return
     guild_data = get_guild_data(member.guild.id)
-    reward = guild_data.get("invite_reward", 0)
-    if reward <= 0:
+    tickets_reward = guild_data.get("invite_reward", 0)
+    crystals_reward = guild_data.get("invite_crystal_reward", 0)
+    if tickets_reward <= 0 and crystals_reward <= 0:
         return
     if (datetime.datetime.now(datetime.timezone.utc) - member.created_at).days < 7:
         return
@@ -1169,14 +1215,22 @@ async def on_member_join(member):
             if inv.uses > old_uses:
                 inviter = inv.inviter
                 if inviter:
-                    tickets_dict = guild_data.setdefault("tickets", {})
                     uid = str(inviter.id)
-                    current = tickets_dict.get(uid, 0)
-                    tickets_dict[uid] = current + reward
+                    if tickets_reward > 0:
+                        tickets_dict = guild_data.setdefault("tickets", {})
+                        tickets_dict[uid] = tickets_dict.get(uid, 0) + tickets_reward
+                    if crystals_reward > 0:
+                        crystals_dict = guild_data.setdefault("crystals", {})
+                        crystals_dict[uid] = crystals_dict.get(uid, 0) + crystals_reward
                     save_data()
-                    print(f"🎟️ Invite reward: Gave {reward} tickets to {inviter} for inviting {member}")
+                    reward_text = []
+                    if tickets_reward > 0:
+                        reward_text.append(f"{tickets_reward} tickets")
+                    if crystals_reward > 0:
+                        reward_text.append(f"{crystals_reward} crystals")
+                    print(f"🎟️ Invite reward: Gave {', '.join(reward_text)} to {inviter} for inviting {member}")
                     try:
-                        await inviter.send(f"🎟️ Thanks for the invite! You received **{reward}** tickets for bringing **{member}** to the server!")
+                        await inviter.send(f"🎟️ Thanks for the invite! You received **{', '.join(reward_text)}** for bringing **{member}** to the server!")
                     except:
                         pass
                 invite_cache[member.guild.id] = {i.code: i.uses for i in current_invites}
