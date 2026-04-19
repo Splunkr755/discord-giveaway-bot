@@ -220,12 +220,10 @@ class ChestView(discord.ui.View):
             f"🎉 You opened the chest and got **{won_name}** → {reward_text or 'nothing'}!",
             ephemeral=True
         )
-        # AUTOMATIC CUSTOM PRIZE ANNOUNCEMENT (new feature)
         if won.get("custom_prize") and guild_data.get("custom_prize_channel_id"):
             ch = interaction.guild.get_channel(int(guild_data["custom_prize_channel_id"]))
             if ch:
                 await ch.send(f"🎉 **CUSTOM PRIZE WON!** {interaction.user.mention} just won **{won_name}** → **{won['custom_prize']}** from the chest! 🎁")
-        # Rare item announcement (still uses the old special reward channel)
         if won.get("chance", 0) <= 0.001 and guild_data.get("special_reward_channel_id"):
             ch = interaction.guild.get_channel(int(guild_data["special_reward_channel_id"]))
             if ch:
@@ -773,6 +771,19 @@ async def my_tickets(interaction: discord.Interaction):
     guild_data = get_guild_data(interaction.guild.id)
     tickets = guild_data.get("tickets", {}).get(str(interaction.user.id), 0)
     await interaction.response.send_message(f"🎟️ You have **{tickets}** tickets!", ephemeral=True)
+
+# ====================== NEW SHOP COMMAND ADDED HERE ======================
+@tree.command(name="shop", description="Open the server shop to browse items")
+async def shop(interaction: discord.Interaction):
+    guild_data = get_guild_data(interaction.guild.id)
+    if not guild_data.get("shop_items"):
+        await interaction.response.send_message("🛒 The shop is currently empty. Ask an admin to add items with /add_shop_item!", ephemeral=True)
+        return
+    view = ShopView(guild_data)
+    embed = view.get_embed()
+    await interaction.response.send_message(embed=embed, view=view)
+# ====================== END OF NEW SHOP COMMAND ======================
+
 @tree.command(name="create_giveaway", description="Create a new raffle/giveaway (costs tickets to enter)")
 @app_commands.describe(
     prize="What the winner gets",
@@ -1098,7 +1109,6 @@ async def global_nuke(interaction: discord.Interaction):
 async def nuke_all_commands(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
     try:
-        # Clear only this server's commands (fast and reliable - no global sync)
         tree.clear_commands(guild=interaction.guild)
         synced = await tree.sync(guild=interaction.guild)
         await interaction.followup.send(
