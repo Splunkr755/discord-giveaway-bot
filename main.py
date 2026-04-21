@@ -1245,6 +1245,66 @@ async def on_message(message: discord.Message):
     if message.author.bot or not message.guild:
         return
     guild_data = get_guild_data(message.guild.id)
+    # TICKETS
+    tickets_won = 0
+    extra_tickets = 0
+    if not is_channel_excluded(message, guild_data.get("excluded_channels", [])):
+        role_bonuses = guild_data.get("role_bonuses", {})
+        role_chance_bonuses = guild_data.get("role_chance_bonuses", {})
+        for role in message.author.roles:
+            rid = str(role.id)
+            if rid in role_bonuses:
+                extra_tickets += role_bonuses[rid]
+            if rid in role_chance_bonuses:
+                extra_chance = role_chance_bonuses[rid]
+        base_chance = guild_data.get("ticket_chance", 0.25)
+        total_chance = base_chance + sum(role_chance_bonuses.values())
+        chance = total_chance
+        while chance > 0:
+            if random.random() < min(chance, 1.0):
+                tickets_won += 1
+            chance -= 1.0
+        if tickets_won > 0:
+            total_tickets = tickets_won + extra_tickets
+            tickets_dict = guild_data.setdefault("tickets", {})
+            user_id_str = str(message.author.id)
+            current = tickets_dict.get(user_id_str, 0)
+            new_total = current + total_tickets
+            tickets_dict[user_id_str] = new_total
+    # CRYSTALS
+    crystals_gained = 0
+    if not is_channel_excluded(message, guild_data.get("crystal_excluded_channels", [])):
+        user_id = str(message.author.id)
+        now = datetime.datetime.now().timestamp()
+        cooldown = guild_data.get("crystal_cooldown", 60)
+        if user_id not in last_crystal_time or now - last_crystal_time[user_id] >= cooldown:
+            if random.random() < guild_data.get("crystal_chance", 1.0):
+                length = len(message.content)
+                crystals_gained = 5 if length < 10 else 10 + (length // 15)
+                crystals_gained = min(crystals_gained, 40)
+                crystals_dict = guild_data.setdefault("crystals", {})
+                crystals_dict[user_id] = crystals_dict.get(user_id, 0) + crystals_gained
+                last_crystal_time[user_id] = now
+                save_data()
+    # COMBINED ANNOUNCEMENT (only when tickets are won)
+    if tickets_won > 0:
+        save_data()
+        ticket_channel_id = guild_data.get("ticket_channel")
+        announcement_channel = message.channel
+        if ticket_channel_id:
+            ch = message.guild.get_channel(int(ticket_channel_id))
+            if ch:
+                announcement_channel = ch
+        current_crystals = guild_data["crystals"].get(str(message.author.id), 0)
+        try:
+            await announcement_channel.send(
+                f"🎟️ {message.author.mention} won **{total_tickets}** ticket(s)! "
+                f"(+{extra_tickets} from roles) **Total Tickets: {new_total}** | "
+                f"💎 +**{crystals_gained}** crystals! **Total Crystals: {current_crystals}**"
+            )
+        except:
+            pass
+        print(f"🎟️ TICKET AWARDED to {message.author} (+{extra_tickets} role bonus) → now has {new_total} tickets | {crystals_gained} crystals")
     # DAILY ENTRIES
     if not is_channel_excluded(message, guild_data.get("daily_excluded_channels", [])):
         daily = guild_data.get("daily_chat_reward", {})
