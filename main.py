@@ -18,7 +18,8 @@ intents.guilds = True
 intents.invites = True
 client = discord.Client(intents=intents)
 tree = app_commands.CommandTree(client)
-DATA_FILE = "/data/bot_data.json"
+# FIXED FOR RENDER FREE TIER - data will now save in the project root
+DATA_FILE = "bot_data.json"
 data = {}
 invite_cache = {}
 last_crystal_time = {}
